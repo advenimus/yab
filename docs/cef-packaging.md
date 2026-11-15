@@ -71,8 +71,10 @@ through a file or a socket. The browser counts a message only from its own
 child running the Alerts helper.
 
 Signing proceeds inside out: framework Mach-O leaves, framework, helpers,
-existing Dock tile plug-in, updater, parent. Every signature enables hardened
-runtime; Developer ID signatures request a timestamp. GPU and Renderer receive
+existing Dock tile plug-in, updater, parent. Developer ID signatures enable
+hardened runtime and request a timestamp. Ad hoc signatures (`-`) do neither,
+as `build.sh` signs its plain ad hoc builds: ad hoc code has no Team ID, so
+library validation would refuse the ad hoc framework. GPU and Renderer receive
 only `com.apple.security.cs.allow-jit`, matching the pinned Chromium
 [GPU](https://chromium.googlesource.com/chromium/src/+/156.0.8078.96/chrome/app/helper-gpu-entitlements.plist)
 and [renderer](https://chromium.googlesource.com/chromium/src/+/156.0.8078.96/chrome/app/helper-renderer-entitlements.plist)
