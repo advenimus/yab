@@ -107,7 +107,8 @@ final class QuietSitesTests: XCTestCase {
     func testTheListsSayWhichHoldOnlyTheGenericHiding() throws {
         // What a quiet site keeps: the lists at the end, generic hiding and
         // the exceptions that reach it, nothing that blocks.
-        let lines = (0..<6).map { "||ads\($0).example^" } + (0..<12).map { "##.slot\($0)" } + ["@@||news.example^$ghide"]
+        // Third-party, one rule a site: 6 blocks fill one list of 8.
+        let lines = (0..<6).map { "||ads\($0).example^$3p" } + (0..<12).map { "##.slot\($0)" } + ["@@||news.example^$ghide"]
         let split = try XCTUnwrap(Filters.lists(Filters.convert(lines), perList: 8))
         XCTAssertEqual(split.lists.count, 3)
         XCTAssertEqual(split.hiding, 2)

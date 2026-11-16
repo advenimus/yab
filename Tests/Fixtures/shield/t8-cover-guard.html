@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8"><title>t8-cover-guard</title>
+<!-- no rule: the click guard runs on every site with the lists -->
+<body><button id="go">go</button>
+<script>
+const F=window.__yabFixture={name:"t8-cover-guard",state:"pending",collateral:"pending",effect:{},kept:{}};
+let ran=false;function finish(){F.state=Object.values(F.effect).every(Boolean)?"blocked":"leaked";F.collateral=Object.values(F.kept).every(Boolean)?"ok":"broken";document.title=F.state+"/"+F.collateral;}
+</script>
+<script>
+function link(href,css){const a=document.createElement("a");a.href=href;a.target="_blank";a.style.cssText=css;document.body.appendChild(a);return a}
+function clickedKept(a){let seen=false;a.addEventListener("click",e=>{seen=true;e.preventDefault()});a.click();const kept=seen&&a.isConnected&&a.hasAttribute("href");a.remove();return kept}
+const whole="position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:2147483647";
+function run(){if(ran)return;ran=true;
+ const cover=link("https://ads.example/landing",whole);
+ cover.click();
+ F.effect.coverStopped=!cover.isConnected&&!cover.hasAttribute("href");
+ F.kept.cardLink=clickedKept(link("https://news.example/story","position:fixed;left:0;top:0;width:100vw;height:40vh"));
+ F.kept.visibleLink=clickedKept(link("https://shop.example/","display:block;"+whole+";background:#fff"));
+ F.kept.ownSiteCover=clickedKept(link("/next",whole));
+ finish()}
+setTimeout(run,100);
+</script>
