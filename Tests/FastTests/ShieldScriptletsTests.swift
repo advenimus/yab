@@ -139,8 +139,13 @@ struct ShieldScriptletsTests {
             defer { opened.close() }
             opened.tab.page.navigate(html: html, base: URL(string: "https://popups.example/")!)
             #expect(try await verdict(opened.tab) == (rule ? "blocked/ok" : "leaked/ok"), "rule \(rule)")
-            try await Task.sleep(for: .milliseconds(500))
-            #expect(rule ? opened.browser.tabs.count == 1 : opened.browser.tabs.count > 1, "rule \(rule)")
+            if rule {
+                try await Task.sleep(for: .milliseconds(500))
+                #expect(opened.browser.tabs.count == 1)
+            } else {
+                // The ad's tab opens late on a Mac busy with other suites.
+                #expect(try await Loaded.until(4) { opened.browser.tabs.count > 1 })
+            }
         }
     }
 
