@@ -27,11 +27,11 @@ import Testing
     // The helper looks a hiding rule up by its site's name: an entity has
     // none, so it is left out and counted rather than kept under a pattern.
     @Test func anEntitysHidingRuleIsLeftOut() {
-        #expect(ShieldRules.site(Filters.onEntity("yts")) == nil)
-        let made = ShieldRules.text(Filters.convert(["yts.*###dontfoid\nexample.org##.banner\n"]))
+        #expect(ShieldRules.site(Filters.onEntity("popups")) == nil)
+        let made = ShieldRules.text(Filters.convert(["popups.*###dontfoid\nexample.org##.banner\n"]))
         let lines = made.text.split(separator: "\n").map(String.init)
         #expect(lines.contains("H\texample.org\t.banner"))
-        #expect(!lines.contains { $0.hasPrefix("H\tyts") })
+        #expect(!lines.contains { $0.hasPrefix("H\tpopups") })
         #expect(made.left == 1)
     }
 

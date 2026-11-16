@@ -276,7 +276,7 @@
 
         // MARK: - property chains
 
-        // Not configurable: a page's own defineProperty (yts's aclib) throws,
+        // Not configurable: a page's own defineProperty (an inline ad library, aclib) throws,
         // which stops its script as an abort would. Rules that share a link
         // (a.b and a.c) share its trap: each adds its rest of the path to it.
         var chained = null;

@@ -11,7 +11,7 @@ final class FiltersScriptletTests: XCTestCase {
         Filters.convert([lines.joined(separator: "\n")]).scriptlets
     }
 
-    // MARK: yts
+    // MARK: real list lines (one popup-heavy site)
 
     /// The lines the lists hold for yts.gg (uBlock filters, EasyList), as
     /// they were saved on 2026-11-15.
@@ -57,16 +57,16 @@ final class FiltersScriptletTests: XCTestCase {
     func testTableSortsKeysAndWritesExceptionsAndOff() throws {
         let made = scriptlets([
             "example.com,~safe.example.com##+js(nowoif)",
-            "yts.*##+js(nowoif)",
-            "yts.*,example.com##+js(aopw, Adcash)",
+            "popups.*##+js(nowoif)",
+            "popups.*,example.com##+js(aopw, Adcash)",
             "off.example.com#@#+js()",
         ])
-        XCTAssertEqual(made.table(), #"{"v":2,"calls":"nowoif\naopw\tAdcash","hosts":" example.com=0,1 off.example.com=*off safe.example.com=-1 yts.*=0,1 "}"#)
+        XCTAssertEqual(made.table(), #"{"v":2,"calls":"nowoif\naopw\tAdcash","hosts":" example.com=0,1 off.example.com=*off popups.*=0,1 safe.example.com=-1 "}"#)
         // And it is JSON the page reads back.
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(made.table().utf8)) as? [String: Any])
         XCTAssertEqual(object["v"] as? Int, 2)
         XCTAssertEqual(object["calls"] as? String, "nowoif\naopw\tAdcash")
-        XCTAssertEqual(object["hosts"] as? String, " example.com=0,1 off.example.com=*off safe.example.com=-1 yts.*=0,1 ")
+        XCTAssertEqual(object["hosts"] as? String, " example.com=0,1 off.example.com=*off popups.*=0,1 safe.example.com=-1 ")
     }
 
     func testTableQuotesArguments() throws {
@@ -158,9 +158,9 @@ final class FiltersScriptletTests: XCTestCase {
     // MARK: sites
 
     func testHostListsAndExclusions() {
-        let made = scriptlets(["A.Example,b.example,~sub.a.example,web.yts.*,1337x.unblocked.*##+js(aopr, x)"])
+        let made = scriptlets(["A.Example,b.example,~sub.a.example,web.popups.*,1337x.unblocked.*##+js(aopr, x)"])
         XCTAssertEqual(made.calls, [["aopr", "x"]])
-        XCTAssertEqual(made.hosts, ["a.example": [0], "b.example": [0], "sub.a.example": [-1], "web.yts.*": [0], "1337x.unblocked.*": [0]])
+        XCTAssertEqual(made.hosts, ["a.example": [0], "b.example": [0], "sub.a.example": [-1], "web.popups.*": [0], "1337x.unblocked.*": [0]])
     }
 
     // uBO: `~safe` spares that site from its own line only, so another
@@ -224,7 +224,7 @@ final class FiltersScriptletTests: XCTestCase {
     }
 
     func testCarriableHosts() {
-        for host in ["example.com", "a-b.example", "yts.*", "xn--bcher-kva.example", "1337x.unblocked.*", "under_score.example", "localhost"] {
+        for host in ["example.com", "a-b.example", "popups.*", "xn--bcher-kva.example", "1337x.unblocked.*", "under_score.example", "localhost"] {
             XCTAssertTrue(Filters.Scriptlets.carriable(host: host), host)
         }
         for host in ["", "Example.com", "a b.example", "a=b.example", "a,b.example", "tab\t.example", "new\nline", "caf\u{E9}.example", "a/b", "a:80", "~a.example"] {
@@ -239,7 +239,7 @@ final class FiltersScriptletTests: XCTestCase {
             (["ok.example"], [], ["nowoif"]),
             (["Bad.Example", "other.example"], [], ["aopr", "x"]),
             (["fine.example"], ["spare me.example"], ["aopr", "y"]),
-            (["yts.*"], ["tab\t.example"], ["aopr", "z"]),
+            (["popups.*"], ["tab\t.example"], ["aopr", "z"]),
         ]
         rules.excepted = [(["ok.example", "a=b.example"], ["nowoif"]), (["off=.example"], nil)]
         let (table, dropped) = rules.table()
@@ -250,7 +250,7 @@ final class FiltersScriptletTests: XCTestCase {
     }
 
     func testEveryKeyOfARealTableIsCarriable() {
-        let rules = Filters.convert([yts.joined(separator: "\n"), "A.Example,~b.sub.example,web.yts.*,xn--bcher-kva.example,a_b.example##+js(nowoif)"])
+        let rules = Filters.convert([yts.joined(separator: "\n"), "A.Example,~b.sub.example,web.popups.*,xn--bcher-kva.example,a_b.example##+js(nowoif)"])
         XCTAssertFalse(rules.scriptlets.hosts.isEmpty)
         XCTAssertTrue(rules.scriptlets.hosts.keys.allSatisfy(Filters.Scriptlets.carriable(host:)))
         XCTAssertNil(rules.dropped["scriptlet-bad-host"])
@@ -342,7 +342,7 @@ final class FiltersScriptletTests: XCTestCase {
     }
 
     func testAdGuardScriptletsAreCounted() {
-        let rules = Filters.convert(["yts.gg#%#//scriptlet('abort-on-property-read', 'aclib')\nyts.gg#%#window.x = 1;"])
+        let rules = Filters.convert(["popups.example#%#//scriptlet('abort-on-property-read', 'aclib')\npopups.example#%#window.x = 1;"])
         XCTAssertTrue(rules.scriptlets.isEmpty)
         XCTAssertEqual(rules.dropped["adguard-scriptlet"], 1)
         XCTAssertEqual(rules.dropped["adguard-js"], 1)
@@ -351,19 +351,19 @@ final class FiltersScriptletTests: XCTestCase {
     // MARK: entity hiding
 
     func testEntityHiding() {
-        let rules = Filters.convert(["yts.*,b.example##.ad"])
-        XCTAssertEqual(rules.blocks.map(\.filter), [Filters.onSite("b.example"), Filters.onEntity("yts")])
+        let rules = Filters.convert(["popups.*,b.example##.ad"])
+        XCTAssertEqual(rules.blocks.map(\.filter), [Filters.onSite("b.example"), Filters.onEntity("popups")])
         // Its sites are hosts, the entity is matched by its address.
         XCTAssertEqual(rules.hidingSites, ["b.example"])
         // Spared on a site the entity names: gone, as for any site.
-        XCTAssertEqual(Filters.convert(["yts.*##.ad", "yts.mx#@#.ad"]).blocks.count, 0)
-        XCTAssertEqual(Filters.convert(["yts.mx##.ad", "yts.*#@#.ad"]).blocks.count, 0)
-        XCTAssertEqual(Filters.convert(["web.yts.*##.ad", "yts.*#@#.ad"]).blocks.count, 0)
-        XCTAssertEqual(Filters.convert(["yts.*##.ad", "other.mx#@#.ad"]).blocks.count, 1)
+        XCTAssertEqual(Filters.convert(["popups.*##.ad", "popups.net#@#.ad"]).blocks.count, 0)
+        XCTAssertEqual(Filters.convert(["popups.net##.ad", "popups.*#@#.ad"]).blocks.count, 0)
+        XCTAssertEqual(Filters.convert(["web.popups.*##.ad", "popups.*#@#.ad"]).blocks.count, 0)
+        XCTAssertEqual(Filters.convert(["popups.*##.ad", "other.net#@#.ad"]).blocks.count, 1)
         // An entity to spare can't be said in unless-domain: a generic rule
         // is kept as it was before entities were read.
-        XCTAssertEqual(Filters.convert(["##.ad", "yts.*#@#.ad"]).generic.map(\.unlessDomain), [[]])
-        XCTAssertEqual(Filters.convert(["~yts.*##.ad"]).dropped["entity-exclude"], 1)
+        XCTAssertEqual(Filters.convert(["##.ad", "popups.*#@#.ad"]).generic.map(\.unlessDomain), [[]])
+        XCTAssertEqual(Filters.convert(["~popups.*##.ad"]).dropped["entity-exclude"], 1)
     }
 
     // MARK: !#if
@@ -428,25 +428,25 @@ final class FiltersScriptletTests: XCTestCase {
     @MainActor
     func testEntityHidingCompilesBesideEverything() throws {
         let lines = [
-            "yts.*###dontfoid", "1337x.unblocked.*##.ad", "web.yts.*,b.example##.promo", "/ads.js$domain=b.com|a.com",
+            "popups.*###dontfoid", "1337x.unblocked.*##.ad", "web.popups.*,b.example##.promo", "/ads.js$domain=b.com|a.com",
             "~a.com##.promo2", "##.sponsor", "news.com#@#.sponsor", "||ads.example^$important", "@@||bank.example^$document",
-            "@@||news.example^$ghide", "yts.*##+js(nowoif)",
+            "@@||news.example^$ghide", "popups.*##+js(nowoif)",
         ]
         let lists = try XCTUnwrap(Filters.lists(Filters.convert(lines + [Shield.base]))).lists
-        XCTAssertTrue(lists[0].contains(#"yts\\.[a-z0-9-]+[/:]"#))
+        XCTAssertTrue(lists[0].contains(#"popups\\.[a-z0-9-]+[/:]"#))
         for list in lists { try compile(list) }
     }
 
-    /// A page of yts.mx (by its address, not the network) under the hiding
-    /// rule for yts.*, and one of another site.
+    /// A page of popups.net (by its address, not the network) under the hiding
+    /// rule for popups.*, and one of another site.
     @MainActor
     func testEntityHidingHidesOnItsSites() throws {
-        let list = try XCTUnwrap(Filters.lists(Filters.convert(["yts.*###dontfoid"]))).lists
+        let list = try XCTUnwrap(Filters.lists(Filters.convert(["popups.*###dontfoid"]))).lists
         let compiled = try list.map { try compile($0) }
-        XCTAssertEqual(try hidden(at: "https://yts.mx/", with: compiled), true)
-        XCTAssertEqual(try hidden(at: "https://www.yts.lt/movies", with: compiled), true)
-        XCTAssertEqual(try hidden(at: "https://notyts.mx/", with: compiled), false)
-        XCTAssertEqual(try hidden(at: "https://yts.example.com/", with: compiled), false)
+        XCTAssertEqual(try hidden(at: "https://popups.net/", with: compiled), true)
+        XCTAssertEqual(try hidden(at: "https://www.popups.org/movies", with: compiled), true)
+        XCTAssertEqual(try hidden(at: "https://notpopups.net/", with: compiled), false)
+        XCTAssertEqual(try hidden(at: "https://popups.example.com/", with: compiled), false)
     }
 
     @MainActor

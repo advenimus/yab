@@ -4,7 +4,7 @@ import WebKit
 @testable import Fast
 
 // Shield's scriptlets on WebKit pages (ShieldScriptlets): an inline ad
-// library stopped on yts.gg, in its frames too, none where Shield
+// library stopped on a site its rules name, in its frames too, none where Shield
 // is off or an extension blocks, and on a site with no rules nothing of the
 // page's own touched.
 @MainActor
@@ -80,9 +80,9 @@ struct ShieldScriptletsTests {
     @Test func anInlineAdLibraryIsStopped() async throws {
         let html = try fixture("t1-inline-aclib")
         do {
-            let restore = use(table("yts.gg##+js(aopr, aclib)"))
+            let restore = use(table("popups.example##+js(aopr, aclib)"))
             defer { restore() }
-            let opened = load(html, at: "https://yts.gg/")
+            let opened = load(html, at: "https://popups.example/")
             defer { opened.close() }
             #expect(try await verdict(opened.tab) == "blocked/ok")
         }
@@ -90,7 +90,7 @@ struct ShieldScriptletsTests {
         do {
             let restore = use(nil)
             defer { restore() }
-            let opened = load(html, at: "https://yts.gg/")
+            let opened = load(html, at: "https://popups.example/")
             defer { opened.close() }
             #expect(try await verdict(opened.tab) == "leaked/ok")
         }
@@ -119,11 +119,11 @@ struct ShieldScriptletsTests {
     func aFramesWindowOpenIsStopped(_ name: String) async throws {
         let html = try fixture(name)
         for rule in [true, false] {
-            let restore = use(rule ? table("yts.*##+js(nowoif)") : nil)
+            let restore = use(rule ? table("popups.*##+js(nowoif)") : nil)
             defer { restore() }
             let opened = tab(bench: true)
             defer { opened.close() }
-            opened.tab.page.navigate(html: html, base: URL(string: "https://yts.gg/")!)
+            opened.tab.page.navigate(html: html, base: URL(string: "https://popups.example/")!)
             #expect(try await verdict(opened.tab) == (rule ? "blocked/ok" : "leaked/ok"), "\(name), rule \(rule)")
         }
     }
@@ -133,11 +133,11 @@ struct ShieldScriptletsTests {
     @Test func aScriptClickOnAnAdLinkIsStopped() async throws {
         let html = try fixture("t7-link-cover")
         for rule in [true, false] {
-            let restore = use(rule ? table("yts.*##+js(nowoif)") : nil)
+            let restore = use(rule ? table("popups.*##+js(nowoif)") : nil)
             defer { restore() }
             let opened = tab(bench: true)
             defer { opened.close() }
-            opened.tab.page.navigate(html: html, base: URL(string: "https://yts.gg/")!)
+            opened.tab.page.navigate(html: html, base: URL(string: "https://popups.example/")!)
             #expect(try await verdict(opened.tab) == (rule ? "blocked/ok" : "leaked/ok"), "rule \(rule)")
             try await Task.sleep(for: .milliseconds(500))
             #expect(rule ? opened.browser.tabs.count == 1 : opened.browser.tabs.count > 1, "rule \(rule)")
@@ -164,15 +164,15 @@ struct ShieldScriptletsTests {
 
     @Test func aSitePausedGetsNoScript() async throws {
         let html = try fixture("t1-inline-aclib")
-        let wasPaused = Shield.shared.isPaused(on: "yts.gg")
-        Shield.shared.pause("yts.gg", true)
-        defer { Shield.shared.pause("yts.gg", wasPaused) }
+        let wasPaused = Shield.shared.isPaused(on: "popups.example")
+        Shield.shared.pause("popups.example", true)
+        defer { Shield.shared.pause("popups.example", wasPaused) }
         do {
-            let restore = use(table("yts.gg##+js(aopr, aclib)"))
+            let restore = use(table("popups.example##+js(aopr, aclib)"))
             defer { restore() }
-            let opened = load(html, at: "https://yts.gg/")
+            let opened = load(html, at: "https://popups.example/")
             defer { opened.close() }
-            #expect(scriptlets(in: PageScripts.list(for: opened.tab, .init(host: "yts.gg", css: ""))).isEmpty)
+            #expect(scriptlets(in: PageScripts.list(for: opened.tab, .init(host: "popups.example", css: ""))).isEmpty)
             #expect(scriptlets(in: PageScripts.list(for: opened.tab, .init(host: "news.test", css: ""))).count == 1)
             #expect(try await verdict(opened.tab) == "leaked/ok")
         }
@@ -180,7 +180,7 @@ struct ShieldScriptletsTests {
 
     @Test func anExtensionBlockingGetsNoScript() async throws {
         do {
-            let restore = use(table("yts.gg##+js(aopr, aclib)"))
+            let restore = use(table("popups.example##+js(aopr, aclib)"))
             defer { restore() }
             let opened = tab()
             defer { opened.close() }
@@ -191,20 +191,20 @@ struct ShieldScriptletsTests {
                 Shield.shared.choose(chosen)
                 if case .extension(let id) = source { Shield.shared.landed(id) }
             }
-            #expect(scriptlets(in: PageScripts.list(for: opened.tab, .init(host: "yts.gg", css: ""))).isEmpty)
+            #expect(scriptlets(in: PageScripts.list(for: opened.tab, .init(host: "popups.example", css: ""))).isEmpty)
             Shield.shared.choose(nil)
-            #expect(scriptlets(in: PageScripts.list(for: opened.tab, .init(host: "yts.gg", css: ""))).count == 1)
+            #expect(scriptlets(in: PageScripts.list(for: opened.tab, .init(host: "popups.example", css: ""))).count == 1)
         }
     }
 
     @Test func switchedOffForMeasuringGetsNoScript() async throws {
         do {
-            let restore = use(table("yts.gg##+js(aopr, aclib)"), on: false)
+            let restore = use(table("popups.example##+js(aopr, aclib)"), on: false)
             defer { restore() }
             let opened = tab()
             defer { opened.close() }
-            #expect(scriptlets(in: PageScripts.list(for: opened.tab, .init(host: "yts.gg", css: ""))).isEmpty)
-            #expect(ShieldScriptlets.chromiumPolicy(for: opened.tab, host: "yts.gg") == nil)
+            #expect(scriptlets(in: PageScripts.list(for: opened.tab, .init(host: "popups.example", css: ""))).isEmpty)
+            #expect(ShieldScriptlets.chromiumPolicy(for: opened.tab, host: "popups.example") == nil)
         }
     }
 
@@ -212,18 +212,18 @@ struct ShieldScriptletsTests {
 
     @Test func everyTabSharesOneScript() async throws {
         do {
-            let restore = use(table("yts.gg##+js(aopr, aclib)", "example.org##+js(nowoif)"))
+            let restore = use(table("popups.example##+js(aopr, aclib)", "example.org##+js(nowoif)"))
             defer { restore() }
             let one = tab(), two = tab()
             defer { one.close(); two.close() }
-            let a = scriptlets(in: PageScripts.list(for: one.tab, .init(host: "yts.gg", css: "")))
+            let a = scriptlets(in: PageScripts.list(for: one.tab, .init(host: "popups.example", css: "")))
             let b = scriptlets(in: PageScripts.list(for: two.tab, .init(host: "news.test", css: "")))
             try #require(a.count == 1 && b.count == 1)
             #expect(a[0] === b[0])
             #expect(a[0].injectionTime == .atDocumentStart && !a[0].isForMainFrameOnly)
             // On the controllers WebKit was given, the same object.
             for opened in [one, two] {
-                opened.tab.arm(hiding: "", on: "yts.gg")
+                opened.tab.arm(hiding: "", on: "popups.example")
                 let controller = requireNativeWebKitFixture(opened.tab, "ShieldScriptletsTests").configuration.userContentController
                 #expect(controller.userScripts.contains { $0 === a[0] })
             }
@@ -233,7 +233,7 @@ struct ShieldScriptletsTests {
     // A window the page opens is a tab of its own, with a controller of its
     // own (WebKitPopups): it is armed with the same script when it is built.
     @Test func aWindowThePageOpensGetsTheScript() async throws {
-        let restore = use(table("yts.gg##+js(aopr, aclib)"))
+        let restore = use(table("popups.example##+js(aopr, aclib)"))
         defer { restore() }
         let opened = tab(bench: true)
         defer { opened.close() }
@@ -257,7 +257,7 @@ struct ShieldScriptletsTests {
         let file = Store.folder.appendingPathComponent("Shield/scriptlets.txt")
         let kept = try? Data(contentsOf: file)
         defer { if let kept { try? kept.write(to: file) } else { try? FileManager.default.removeItem(at: file) } }
-        let rules = Filters.convert(["yts.gg##+js(aopr, aclib)\nexample.org##+js(nowoif)"])
+        let rules = Filters.convert(["popups.example##+js(aopr, aclib)\nexample.org##+js(nowoif)"])
         ShieldScriptlets.write(rules)
         for _ in 0..<100 where ShieldScriptlets.table == nil { try await Task.sleep(for: .milliseconds(10)) }
         #expect(ShieldScriptlets.table?.text == rules.scriptlets.table())
@@ -308,13 +308,13 @@ struct ShieldScriptletsTests {
     // would be without it. The same look on a site with rules tells the
     // wrappers, so it would see one here.
     @Test func aSiteWithNoRulesIsUntouched() async throws {
-        let rules = table("yts.gg##+js(nowoif)", "yts.gg##+js(aeld, click)", "yts.gg##+js(nostif, ads)")
+        let rules = table("popups.example##+js(nowoif)", "popups.example##+js(aeld, click)", "popups.example##+js(nostif, ads)")
         let absent = try await fingerprint(at: "https://news.test/", table: nil)
         let present = try await fingerprint(at: "https://news.test/", table: rules)
         try #require(absent.count == 7)
         #expect(present == absent)
-        let hooked = try await fingerprint(at: "https://yts.gg/", table: rules)
-        let unhooked = try await fingerprint(at: "https://yts.gg/", table: nil)
+        let hooked = try await fingerprint(at: "https://popups.example/", table: rules)
+        let unhooked = try await fingerprint(at: "https://popups.example/", table: nil)
         #expect(hooked["open"] != unhooked["open"] || hooked["listen"] != unhooked["listen"] || hooked["timeout"] != unhooked["timeout"],
                 "the look can't tell a wrapped function from the page's own")
     }
@@ -323,14 +323,14 @@ struct ShieldScriptletsTests {
 
     @Test func chromiumCarriesWhereShieldIsOff() async throws {
         do {
-            let restore = use(table("yts.gg##+js(aopr, aclib)"))
+            let restore = use(table("popups.example##+js(aopr, aclib)"))
             defer { restore() }
             let opened = tab()
             defer { opened.close() }
             let wasPaused = Shield.shared.isPaused(on: "paused.test")
             Shield.shared.pause("paused.test", true)
             defer { Shield.shared.pause("paused.test", wasPaused) }
-            let policy = try #require(ShieldScriptlets.chromiumPolicy(for: opened.tab, host: "yts.gg"))
+            let policy = try #require(ShieldScriptlets.chromiumPolicy(for: opened.tab, host: "popups.example"))
             #expect(policy.off.contains("paused.test"))
             #expect(ShieldScriptlets.chromiumPolicy(for: opened.tab, host: "localhost")?.off.contains("localhost") == true)
             let registration = try #require(ShieldScriptlets.chromium(policy))

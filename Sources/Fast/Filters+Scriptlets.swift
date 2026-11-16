@@ -14,7 +14,7 @@ extension Filters {
 
         /// [canonical name, arguments…], each once, in the order first seen.
         var calls: [[String]] = []
-        /// A lowercase host ("example.com") or entity ("yts.*") to call
+        /// A lowercase host ("example.com") or entity ("example.*") to call
         /// indexes: the ones it runs first, ascending, then the ones it
         /// cancels.
         var hosts: [String: [Int]] = [:]
