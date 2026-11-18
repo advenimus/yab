@@ -81,15 +81,20 @@
     }
 
     // One pass over the lines, so only the picked calls are ever cut out.
+    // A call can be at two indexes (a line that spares sites has its own):
+    // it runs once.
     function decode(calls, picked) {
-        var out = [], line = 0, at = 0;
+        var out = [], line = 0, at = 0, seen = Object.create(null);
         for (var i = 0; i < picked.length; i++) {
             for (; line < picked[i]; line++) {
                 at = calls.indexOf('\n', at) + 1;
                 if (!at) return out;
             }
             var end = calls.indexOf('\n', at);
-            out.push(calls.slice(at, end < 0 ? calls.length : end).split('\t'));
+            var text = calls.slice(at, end < 0 ? calls.length : end);
+            if (seen[text]) continue;
+            seen[text] = true;
+            out.push(text.split('\t'));
         }
         return out;
     }

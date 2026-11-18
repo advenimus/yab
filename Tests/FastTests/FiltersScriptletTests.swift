@@ -61,12 +61,12 @@ final class FiltersScriptletTests: XCTestCase {
             "popups.*,example.com##+js(aopw, Adcash)",
             "off.example.com#@#+js()",
         ])
-        XCTAssertEqual(made.table(), #"{"v":2,"calls":"nowoif\naopw\tAdcash","hosts":" example.com=0,1 off.example.com=*off popups.*=0,1 safe.example.com=-1 "}"#)
+        XCTAssertEqual(made.table(), #"{"v":2,"calls":"nowoif\nnowoif\naopw\tAdcash","hosts":" example.com=0,2 off.example.com=*off popups.*=1,2 safe.example.com=-1 "}"#)
         // And it is JSON the page reads back.
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(made.table().utf8)) as? [String: Any])
         XCTAssertEqual(object["v"] as? Int, 2)
-        XCTAssertEqual(object["calls"] as? String, "nowoif\naopw\tAdcash")
-        XCTAssertEqual(object["hosts"] as? String, " example.com=0,1 off.example.com=*off popups.*=0,1 safe.example.com=-1 ")
+        XCTAssertEqual(object["calls"] as? String, "nowoif\nnowoif\naopw\tAdcash")
+        XCTAssertEqual(object["hosts"] as? String, " example.com=0,2 off.example.com=*off popups.*=1,2 safe.example.com=-1 ")
     }
 
     func testTableQuotesArguments() throws {
@@ -164,14 +164,24 @@ final class FiltersScriptletTests: XCTestCase {
     }
 
     // uBO: `~safe` spares that site from its own line only, so another
-    // line naming it still runs the call there; a `#@#` still takes it back.
+    // line still runs the call there, naming it or a domain above it; a
+    // `#@#` still takes it back. The page cancels an index for every key,
+    // so the line that spares has its own (ShieldScriptletsTests runs them).
     func testAnExclusionSparesOnlyItsOwnLine() {
         let both = scriptlets(["example.com,~safe.example.com##+js(nowoif)", "safe.example.com##+js(nowoif)"])
-        XCTAssertEqual(both.hosts, ["example.com": [0], "safe.example.com": [0]])
+        XCTAssertEqual(both.calls, [["nowoif"], ["nowoif"]])
+        XCTAssertEqual(both.hosts, ["example.com": [0], "safe.example.com": [1, -1]])
+        let above = scriptlets(["example.com,~safe.example.com##+js(nowoif)", "example.com##+js(nowoif)"])
+        XCTAssertEqual(above.hosts, ["example.com": [0, 1], "safe.example.com": [-1]])
         let alone = scriptlets(["example.com,~safe.example.com##+js(nowoif)"])
+        XCTAssertEqual(alone.calls, [["nowoif"]])
         XCTAssertEqual(alone.hosts, ["example.com": [0], "safe.example.com": [-1]])
         let excepted = scriptlets(["example.com,~safe.example.com##+js(nowoif)", "safe.example.com##+js(nowoif)", "safe.example.com#@#+js(nowoif)"])
-        XCTAssertEqual(excepted.hosts["safe.example.com"], [0, -1])
+        XCTAssertEqual(excepted.hosts["safe.example.com"], [1, -1, -2])
+        // Lines that spare the same sites share their call.
+        let same = scriptlets(["a.example,~x.a.example##+js(nowoif)", "b.example,~x.a.example##+js(nowoif.js)"])
+        XCTAssertEqual(same.calls, [["nowoif"]])
+        XCTAssertEqual(same.hosts, ["a.example": [0], "b.example": [0], "x.a.example": [-1]])
     }
 
     func testBadSitesDropTheLine() {
@@ -353,8 +363,8 @@ final class FiltersScriptletTests: XCTestCase {
     func testEntityHiding() {
         let rules = Filters.convert(["popups.*,b.example##.ad"])
         XCTAssertEqual(rules.blocks.map(\.filter), [Filters.onSite("b.example"), Filters.onEntity("popups")])
-        // Its sites are hosts, the entity is matched by its address.
-        XCTAssertEqual(rules.hidingSites, ["b.example"])
+        // The entity is a site with hiding of its own too, so it is never quiet.
+        XCTAssertEqual(rules.hidingSites, ["b.example", "popups.*"])
         // Spared on a site the entity names: gone, as for any site.
         XCTAssertEqual(Filters.convert(["popups.*##.ad", "popups.net#@#.ad"]).blocks.count, 0)
         XCTAssertEqual(Filters.convert(["popups.net##.ad", "popups.*#@#.ad"]).blocks.count, 0)

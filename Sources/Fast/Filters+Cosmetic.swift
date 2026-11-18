@@ -111,9 +111,7 @@ extension Filters {
                         let filter = site.hasSuffix(".*") ? Filters.onEntity(String(site.dropLast(2))) : Filters.onSite(site)
                         own.append(Rule(action: .hide(selector), filter: filter))
                     }
-                    // Hosts only: QuietSites matches a page's host by its
-                    // suffixes, which an entity is not.
-                    named.formUnion(left.filter { !$0.hasSuffix(".*") })
+                    named.formUnion(left)
                 }
             }
             return (generic, own, dropped, named)

@@ -16,7 +16,8 @@ extension Filters {
         var calls: [[String]] = []
         /// A lowercase host ("example.com") or entity ("example.*") to call
         /// indexes: the ones it runs first, ascending, then the ones it
-        /// cancels.
+        /// cancels. The same call can be at two indexes (ScriptletRules.table);
+        /// the page runs it once.
         var hosts: [String: [Int]] = [:]
 
         var isEmpty: Bool { calls.isEmpty }
@@ -215,9 +216,13 @@ extension Filters {
             var lost: [String: Int] = [:]
             guard !allOff else { return (Scriptlets(), [Drop.scriptletExcepted: made.count]) }
             var out = Scriptlets()
-            var index: [[String]: Int] = [:]
+            // The page takes a cancel at a key as meant for every line that
+            // has the call, but a `~site` spares the site from its own line
+            // only: a line that spares sites has a call of its own, shared
+            // only with lines sparing the same ones.
+            var index: [[[String]]: Int] = [:]
+            var byCall: [[String]: [Int]] = [:]
             var lists: [String: Set<Int>] = [:]
-            var spares: [String: Set<Int>] = [:]
             for rule in made {
                 guard Scriptlets.carriable(rule.call) else {
                     lost[Drop.scriptletUnsafeArg, default: 0] += 1
@@ -231,21 +236,18 @@ extension Filters {
                     lost[Drop.scriptletExcepted, default: 0] += 1
                     continue
                 }
+                let key = [rule.call, Set(rule.spared).sorted()]
                 let at: Int
-                if let known = index[rule.call] {
+                if let known = index[key] {
                     at = known
                 } else {
                     at = out.calls.count
-                    index[rule.call] = at
+                    index[key] = at
+                    byCall[rule.call, default: []].append(at)
                     out.calls.append(rule.call)
                 }
                 for site in rule.sites { lists[site, default: []].insert(at) }
-                for site in rule.spared { spares[site, default: []].insert(at) }
-            }
-            // A `~site` spares that site from its own line only: another
-            // line naming the site still runs the call there.
-            for (site, spared) in spares {
-                for at in spared where lists[site]?.contains(at) != true { lists[site, default: []].insert(-(at + 1)) }
+                for site in rule.spared { lists[site, default: []].insert(-(at + 1)) }
             }
             guard !out.calls.isEmpty else { return (out, lost) }
             var off = Set<String>()
@@ -259,8 +261,10 @@ extension Filters {
                     continue
                 }
                 // An exception for a call nothing makes says nothing.
-                guard let at = index[call] else { continue }
-                for site in rule.sites { lists[site, default: []].insert(-(at + 1)) }
+                guard let indexes = byCall[call] else { continue }
+                for site in rule.sites {
+                    for at in indexes { lists[site, default: []].insert(-(at + 1)) }
+                }
             }
             for (site, list) in lists {
                 out.hosts[site] = list.filter { $0 >= 0 }.sorted() + list.filter { $0 < 0 }.sorted(by: >)

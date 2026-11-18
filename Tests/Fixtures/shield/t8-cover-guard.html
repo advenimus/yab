@@ -1,5 +1,6 @@
 <!doctype html><meta charset="utf-8"><title>t8-cover-guard</title>
 <!-- no rule: the click guard runs on every site with the lists -->
+<style>.drawn::before{content:"";position:absolute;left:0;top:0;right:0;bottom:0;background:#c00}.worded::after{content:"Shop the sale"}</style>
 <body><button id="go">go</button>
 <script>
 const F=window.__yabFixture={name:"t8-cover-guard",state:"pending",collateral:"pending",effect:{},kept:{}};
@@ -15,7 +16,11 @@ function run(){if(ran)return;ran=true;
  F.effect.coverStopped=!cover.isConnected&&!cover.hasAttribute("href");
  F.kept.cardLink=clickedKept(link("https://news.example/story","position:fixed;left:0;top:0;width:100vw;height:40vh"));
  F.kept.visibleLink=clickedKept(link("https://shop.example/","display:block;"+whole+";background:#fff"));
+ F.kept.noBlueLink=clickedKept(link("https://shop.example/deal","display:block;"+whole+";background:rgb(255,160,0)"));
+ F.kept.halfSeenLink=clickedKept(link("https://shop.example/half","display:block;"+whole+";background:rgba(0,0,0,0.5)"));
  F.kept.ownSiteCover=clickedKept(link("/next",whole));
+ const drawn=link("https://shop.example/hero",whole);drawn.className="drawn";F.kept.drawnBefore=clickedKept(drawn);
+ const worded=link("https://shop.example/sale",whole);worded.className="worded";F.kept.wordedAfter=clickedKept(worded);
  finish()}
 setTimeout(run,100);
 </script>

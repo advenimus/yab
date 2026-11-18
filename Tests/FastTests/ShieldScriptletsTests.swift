@@ -165,6 +165,64 @@ struct ShieldScriptletsTests {
         }
     }
 
+    // A person's click on a clear cover whose handler opens twice: the
+    // first open takes the cover away, and the second, in the same click,
+    // must not get through either.
+    @Test func aCoverThatOpensTwiceOpensNothing() async throws {
+        let html = try fixture("t9-cover-opens-twice")
+        for script in [true, false] {
+            let restore = use(script ? table("other.example##+js(nowoif)") : nil)
+            defer { restore() }
+            let opened = tab(bench: true)
+            defer { opened.close() }
+            let view = requireNativeWebKitFixture(opened.tab, "ShieldScriptletsTests")
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = view
+            defer { window.close() }
+            opened.tab.page.navigate(html: html, base: URL(string: "https://news.test/")!)
+            #expect(try await Loaded.until(4) {
+                (try? await opened.tab.page.fixtureExpression("!!window.__yabFixture && document.readyState === 'complete'", world: .page)) as? Bool == true
+            })
+            window.orderFront(nil)
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(PageBenchInput.click(opened.tab.page, x: 400, y: 300))
+            #expect(try await verdict(opened.tab) == "clicked/ok", "script \(script)")
+            if script {
+                try await Task.sleep(for: .milliseconds(500))
+                #expect(opened.browser.tabs.count == 1)
+            } else {
+                #expect(try await Loaded.until(4) { opened.browser.tabs.count > 2 })
+            }
+        }
+    }
+
+    // uBO: a `~site` spares that site from its own line only. Another line
+    // making the same call still runs there, on the site or a part of it;
+    // a #@# takes it back from every line.
+    @Test func anExclusionSparesOnlyItsOwnLine() async throws {
+        let html = try fixture("s7a-nowoif-all")
+        let spares = "popups.example,~safe.popups.example##+js(nowoif)"
+        let cases: [(rules: [String], at: String, verdict: String)] = [
+            ([spares], "https://safe.popups.example/", "leaked/ok"),
+            ([spares, "popups.example##+js(nowoif)"], "https://safe.popups.example/", "blocked/ok"),
+            ([spares, "popups.*##+js(nowoif)"], "https://safe.popups.example/", "blocked/ok"),
+            ([spares, "a.safe.popups.example##+js(nowoif)"], "https://a.safe.popups.example/", "blocked/ok"),
+            ([spares, "popups.example##+js(nowoif)", "safe.popups.example#@#+js(nowoif)"], "https://safe.popups.example/", "leaked/ok"),
+            ([spares, "popups.example##+js(nowoif)"], "https://popups.example/", "blocked/ok"),
+        ]
+        for one in cases {
+            let restore = use(ShieldScriptlets.Table(Filters.convert([one.rules.joined(separator: "\n")]).scriptlets.table()))
+            defer { restore() }
+            // A tab that lets pages open windows on their own, so only the
+            // script returns null.
+            let opened = tab(bench: true)
+            defer { opened.close() }
+            opened.tab.page.navigate(html: html, base: URL(string: one.at)!)
+            #expect(try await verdict(opened.tab) == one.verdict, "\(one.rules) at \(one.at)")
+        }
+    }
+
     // MARK: - when there is none
 
     @Test func aSitePausedGetsNoScript() async throws {
