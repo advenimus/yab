@@ -160,7 +160,7 @@ extension Words {
             rows = Array((found + begun + strong + [search] + asked + weak).prefix(4))
         }
         if wantsSettings(text) {
-            rows.insert(WordRow(action: .settings, icon: .settings, title: "Settings", subtitle: "Yab on this iPhone", key: .go, group: .yab), at: 0)
+            rows.insert(WordRow(action: .settings, icon: .settings, title: "Settings", subtitle: "Yab on this \(DeviceWord.name)", key: .go, group: .yab), at: 0)
         }
         return rows
     }
