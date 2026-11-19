@@ -116,6 +116,70 @@ struct HistoryPortKeysTests {
         #expect(rows.reduce(0, +) == 100)
     }
 
+    /// Visits in each space are shared out as the counts are: each port's
+    /// row gets its pages' visits in that space, the row the servers shared
+    /// keeps what is left, and nothing is lost when a row folds into one
+    /// already there.
+    @Test func aSpacesVisitsAreSharedOutToo() throws {
+        let a = UUID().uuidString, b = UUID().uuidString
+        func here(_ count: Int) -> SpaceVisits { SpaceVisits(count: count, last: now) }
+        var visits: [String: Visit] = [
+            "localhost": Visit(url: "http://localhost:3105/", key: "localhost", title: "Blog home", count: 20, last: now,
+                               spaces: [a: here(12), b: here(3)]),
+            "localhost/a": Visit(url: "http://localhost:3000/a", key: "localhost/a", title: "A", count: 10, last: now, spaces: [a: here(8)]),
+            "localhost/b": Visit(url: "http://localhost:4000/b", key: "localhost/b", title: "B", count: 4, last: now, spaces: [a: here(2), b: here(1)]),
+        ]
+        #expect(History.keyPorts(&visits))
+        #expect(visits["localhost:3000"]?.spaces?[a]?.count == 8)
+        #expect(visits["localhost:4000"]?.spaces?[a]?.count == 2)
+        #expect(visits["localhost:4000"]?.spaces?[b]?.count == 1)
+        #expect(visits["localhost:3105"]?.spaces?[a]?.count == 2)
+        #expect(visits["localhost:3105"]?.spaces?[b]?.count == 2)
+        #expect(visits["localhost:3000/a"]?.spaces?[a]?.count == 8)
+    }
+
+    /// The shared row and a page on the same server: the row folds into the
+    /// one its page made, its visits in each space with it.
+    @Test func aRowFoldedIntoItsServerKeepsItsSpaces() throws {
+        let a = UUID().uuidString
+        var visits: [String: Visit] = [
+            "localhost": Visit(url: "http://localhost:3000/", key: "localhost", title: "Pika", count: 15, last: now,
+                               spaces: [a: SpaceVisits(count: 15, last: now)]),
+            "localhost/a": Visit(url: "http://localhost:3000/a", key: "localhost/a", title: "A", count: 10, last: now,
+                                 spaces: [a: SpaceVisits(count: 10, last: now)]),
+        ]
+        #expect(History.keyPorts(&visits))
+        #expect(visits["localhost:3000"]?.count == 15)
+        #expect(visits["localhost:3000"]?.spaces?[a]?.count == 15)
+        #expect(visits["localhost:3000"]?.title == "Pika")
+    }
+
+    /// Two IPv6 hosts are two hosts, colons and all: the first's own six
+    /// visits to its front page stay with it, none go to the second.
+    @Test func ipv6HostsDontShareVisits() throws {
+        var visits: [String: Visit] = [
+            "[fd00::1]": Visit(url: "http://[fd00::1]:3000/", key: "[fd00::1]", title: "", count: 10, last: now),
+            "[fd00::1]/a": Visit(url: "http://[fd00::1]:3000/a", key: "[fd00::1]/a", title: "A", count: 4, last: now),
+            "[fd00::2]": Visit(url: "http://[fd00::2]:4000/", key: "[fd00::2]", title: "", count: 2, last: now),
+            "[fd00::2]/b": Visit(url: "http://[fd00::2]:4000/b", key: "[fd00::2]/b", title: "B", count: 2, last: now),
+        ]
+        #expect(History.keyPorts(&visits))
+        #expect(visits["[fd00::1]:3000"]?.count == 10)
+        #expect(visits["[fd00::2]:4000"]?.count == 2)
+        #expect(History.bareHost("[fd00::1]:3000") == "[fd00::1]")
+        #expect(History.bareHost("localhost:3000") == "localhost")
+    }
+
+    /// "Been here in this space" asks for the site's row, port and all.
+    @Test func beenAtAServerOnAPort() throws {
+        let space = UUID()
+        let history = History([])
+        history.record(URL(string: "https://example.com:8443/dashboard")!, title: "Dashboard", space: space)
+        #expect(history.been(at: URL(string: "https://example.com:8443/")!, in: space))
+        #expect(!history.been(at: URL(string: "https://example.com/")!, in: space))
+        #expect(!history.been(at: URL(string: "https://example.com:8443/")!, in: UUID()))
+    }
+
     /// In the field: "local" leads with the busiest server, finished with
     /// its port, and Return's row goes there.
     @Test func theFieldFinishesThePort() throws {
