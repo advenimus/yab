@@ -11,7 +11,8 @@ import SyncKit
 /// A place sync holds: a page a device went to in the last two weeks (the
 /// Mac's visit records), with the device whose visit it last was.
 struct SyncedPlace: Equatable, Sendable {
-    /// Sync's key for the place (SyncVisit.key): host and path, lowercased.
+    /// Sync's key for the place (SyncVisit.key): host, a port of its own and
+    /// path, lowercased.
     var key: String
     var url: String
     var title: String

@@ -420,7 +420,7 @@ final class History: ObservableObject {
                 if node.isFolder { walk(node.children ?? []); continue }
                 guard let text = node.url, let url = URL(string: text),
                       url.scheme == "http" || url.scheme == "https" else { continue }
-                let key = Address.pretty(url).lowercased()
+                let key = History.key(for: url)
                 guard !key.isEmpty, keys.insert(key).inserted else { continue }
                 places.append(Visit(url: text, key: key, title: node.title, count: 0, last: .distantPast))
             }
@@ -594,6 +594,7 @@ final class History: ObservableObject {
     init(file: URL) {
         storage = file
         load()
+        if pendingPortKeys { pendingPortKeys = false; save() }
         counted = visits.count
         if visits.count > 500 { scheduleIndex() }
     }
@@ -633,10 +634,11 @@ final class History: ObservableObject {
         // visit to the site. Without this, typing three letters offers the
         // article you happened to open last week rather than the front page,
         // and nobody types a domain meaning to land halfway down it.
-        if let host = url.host(), key.contains("/") {
-            let root = (host.hasPrefix("www.") ? String(host.dropFirst(4)) : host).lowercased()
+        if url.host() != nil, key.contains("/") {
+            let front = URL(string: "/", relativeTo: url)!.absoluteURL
+            let root = History.key(for: front)
             var home = visits[root] ?? Visit(
-                url: URL(string: "/", relativeTo: url)!.absoluteURL.absoluteString, key: root, title: "", count: 0, last: Date()
+                url: front.absoluteString, key: root, title: "", count: 0, last: Date()
             )
             home.count += 1
             home.last = Date()
@@ -685,7 +687,7 @@ final class History: ObservableObject {
     /// A visit counted before its page had a title (Browser.noticeCommit):
     /// the title it has now.
     func retitle(_ url: URL, title: String) {
-        let key = Address.pretty(url).lowercased()
+        let key = History.key(for: url)
         guard !title.isEmpty, var seen = visits[key], seen.title != title else { return }
         seen.title = title
         visits[key] = seen
@@ -696,7 +698,7 @@ final class History: ObservableObject {
     /// the page lands; this only says it was meant.
     func typedIn(_ url: URL) {
         guard url.scheme == "http" || url.scheme == "https" else { return }
-        let key = Address.pretty(url).lowercased()
+        let key = History.key(for: url)
         guard !key.isEmpty else { return }
         var seen = visits[key] ?? Visit(url: url.absoluteString, key: key, title: "", count: 0, last: Date())
         seen.typed = (seen.typed ?? 0) + 1
@@ -713,7 +715,7 @@ final class History: ObservableObject {
 
     nonisolated private static func merge(_ url: URL, title: String, count: Int, typed: Int, last: Date, into visits: inout [String: Visit]) {
         guard url.scheme == "http" || url.scheme == "https" else { return }
-        let key = Address.pretty(url).lowercased()
+        let key = History.key(for: url)
         guard !key.isEmpty else { return }
         if var seen = visits[key] {
             seen.count += count
@@ -877,13 +879,13 @@ final class History: ObservableObject {
     /// search's, and a new search opened in a tab read "cmux next - Google
     /// Search" while "cmux" loaded. A query that differs has no known name.
     func title(of url: URL) -> String? {
-        guard let seen = visits[Address.pretty(url).lowercased()], !seen.title.isEmpty else { return nil }
+        guard let seen = visits[History.key(for: url)], !seen.title.isEmpty else { return nil }
         guard (url.query() ?? "") == (URL(string: seen.url)?.query() ?? "") else { return nil }
         return seen.title
     }
 
     func retitle(_ url: URL, _ title: String) {
-        let key = Address.pretty(url).lowercased()
+        let key = History.key(for: url)
         guard !title.isEmpty, var seen = visits[key], seen.title != title else { return }
         seen.title = title
         visits[key] = seen
@@ -985,7 +987,7 @@ final class History: ObservableObject {
         var all = visits
         var changed = false
         for place in synced {
-            let key = Address.pretty(place.url).lowercased()
+            let key = History.key(for: place.url)
             guard !key.isEmpty, place.url.scheme == "http" || place.url.scheme == "https" else { continue }
             if var seen = all[key] {
                 let newer = place.last > seen.last
@@ -1078,8 +1080,25 @@ final class History: ObservableObject {
         save()
     }
 
-    /// The history's key for a page: what you would have typed to get there.
-    static func key(for url: URL) -> String { Address.pretty(url).lowercased() }
+    /// The history's key for a page: what you would have typed to get there,
+    /// the port too when it isn't the scheme's own. localhost:3000 and
+    /// localhost:4000 are two servers, two places, as Arc lists them; the
+    /// key had no port, so all of localhost was one row going to whichever
+    /// server made it first. The same as sync's key (SyncVisit.key).
+    nonisolated static func key(for url: URL) -> String {
+        Address.pretty(url, port: ownPort(url) != nil).lowercased()
+    }
+
+    /// The port an address names that isn't its scheme's own: 3000 for
+    /// localhost:3000, nil for https://example.com:443.
+    nonisolated static func ownPort(_ url: URL) -> Int? {
+        guard let port = url.port else { return nil }
+        switch url.scheme?.lowercased() {
+        case "http": return port == 80 ? nil : port
+        case "https": return port == 443 ? nil : port
+        default: return port
+        }
+    }
 
     /// Sites forgotten from the empty field's Frequent. A site there stands
     /// for all its pages, so forgetting the page it showed would only bring
@@ -1469,7 +1488,91 @@ final class History: ObservableObject {
             Store.quarantine(storage)
             return
         }
-        visits = Dictionary(list.map { ($0.key, $0) }, uniquingKeysWith: { a, b in a.last >= b.last ? a : b })
+        var loaded = Dictionary(list.map { ($0.key, $0) }, uniquingKeysWith: { a, b in a.last >= b.last ? a : b })
+        if History.keyPorts(&loaded) { pendingPortKeys = true }
+        visits = loaded
+    }
+
+    /// Set when `load` gave places their ports, to write them down once.
+    private var pendingPortKeys = false
+
+    /// Places kept before the key had a port (`key(for:)`), given theirs:
+    /// a page at localhost:3000 comes under localhost:3000/…, and the one
+    /// row every server on a host shared (all its pages' visits counted
+    /// toward it) becomes a row for each port, counted by that port's
+    /// pages, the visits to the row itself staying with the server it
+    /// went to. Only addresses with a port of their own move. Whether
+    /// anything did.
+    @discardableResult
+    nonisolated static func keyPorts(_ visits: inout [String: Visit]) -> Bool {
+        var shared: [Visit] = []
+        var moved: [Visit] = []
+        for (key, visit) in visits {
+            guard let url = URL(string: visit.url), ownPort(url) != nil else { continue }
+            let now = History.key(for: url)
+            guard now != key else { continue }
+            visits[key] = nil
+            if key.contains("/") { moved.append(visit) } else { shared.append(visit) }
+        }
+        guard !shared.isEmpty || !moved.isEmpty else { return false }
+        func fold(_ visit: Visit, under key: String) {
+            var visit = visit
+            visit.key = key
+            guard var seen = visits[key] else { visits[key] = visit; return }
+            seen.count += visit.count
+            if let typed = visit.typed { seen.typed = (seen.typed ?? 0) + typed }
+            if visit.last > seen.last { seen.last = visit.last; seen.url = visit.url; if !visit.title.isEmpty { seen.title = visit.title } }
+            if seen.title.isEmpty { seen.title = visit.title }
+            visits[key] = seen
+        }
+        // Each port's pages, and what they add up to, by the row's key.
+        var ports: [String: (count: Int, last: Date, url: String)] = [:]
+        for page in moved {
+            guard let url = URL(string: page.url) else { continue }
+            fold(page, under: History.key(for: url))
+            let front = URL(string: "/", relativeTo: url)!.absoluteURL
+            let root = History.key(for: front)
+            let was = ports[root]
+            ports[root] = ((was?.count ?? 0) + page.count, max(was?.last ?? .distantPast, page.last), front.absoluteString)
+        }
+        // The row each host's servers shared: moved, when the address it
+        // kept had a port, or left where it is, when it was the scheme's
+        // own. Its visits are shared out: each port's row as many as its
+        // pages had, scaled down to the row's own when the pages had more
+        // (counts brought in from another browser never reached the row),
+        // and what is left, the visits to the row itself, stays with the
+        // server it went to. The host counts for no more than it did.
+        var hosts = Set(ports.keys.map { String($0.prefix { $0 != ":" }) })
+        func split(_ host: String, _ row: Visit?, under own: String?) {
+            let mine = ports.filter { $0.key.hasPrefix(host + ":") }
+            guard var row, let own else {
+                for (key, port) in mine {
+                    fold(Visit(url: port.url, key: key, title: "", count: port.count, last: port.last), under: key)
+                }
+                return
+            }
+            let pages = mine.values.reduce(0) { $0 + $1.count }
+            let budget = min(row.count, pages)
+            var given = 0
+            for (key, port) in mine.sorted(by: { $0.key < $1.key }) {
+                let count = pages == 0 ? 0 : budget * port.count / pages
+                given += count
+                guard count > 0 || key == own else { continue }
+                fold(Visit(url: port.url, key: key, title: "", count: count, last: port.last), under: key)
+            }
+            row.count -= given
+            if own == host { visits[host] = nil }
+            if row.count > 0 || (row.typed ?? 0) > 0 || own != host || visits[own] != nil { fold(row, under: own) }
+        }
+        for row in shared {
+            guard let url = URL(string: row.url) else { continue }
+            let own = History.key(for: url)
+            let host = String(own.prefix { $0 != ":" })
+            hosts.remove(host)
+            split(host, row, under: own)
+        }
+        for host in hosts { split(host, visits[host], under: visits[host] == nil ? nil : host) }
+        return true
     }
 
     /// Coalesced writes keep every imported visit. Encoding and disk work

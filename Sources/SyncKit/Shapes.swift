@@ -470,13 +470,17 @@ public struct SyncVisit: Equatable, Sendable, Identifiable {
     /// Whether history keeps a place of this kind at all.
     public static func keeps(_ url: URL) -> Bool { url.scheme == "http" || url.scheme == "https" }
 
-    /// The Mac's history key: `Address.pretty(url).lowercased()`, the host
-    /// without www., an IPv6 address in brackets, and the path unless it is
-    /// empty or "/". No port, query or fragment.
+    /// The Mac's history key (`History.key(for:)`): the host without www.,
+    /// an IPv6 address in brackets, a port that isn't the scheme's own
+    /// (localhost:3000 and localhost:4000 are two places), and the path
+    /// unless it is empty or "/". No query or fragment.
     public static func key(_ url: URL) -> String {
         guard let host = url.host() else { return url.absoluteString.lowercased() }
         var bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         if bare.contains(":") { bare = "[\(bare)]" }
+        if let port = url.port, port != (url.scheme?.lowercased() == "https" ? 443 : url.scheme?.lowercased() == "http" ? 80 : -1) {
+            bare += ":\(port)"
+        }
         let path = url.path()
         return (path.isEmpty || path == "/" ? bare : bare + path).lowercased()
     }
