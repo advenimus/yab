@@ -65,6 +65,8 @@ extension AppModel {
             row.subtitle = "Search \(name) · " + (field.place.replacesTab && field.pageIsToday ? "in this tab" : "new tab")
             return row
         }
+        // Yab's own menu actions, as the Mac's field finds them.
+        rows = Words.withCommands(rows, typed: field.words, commands: commandCandidates)
         // The engine's completions, under the search for the words themselves.
         let phrases = SearchSuggest.shared.phrases(for: field.words)
         if !phrases.isEmpty {
@@ -180,6 +182,13 @@ extension AppModel {
             startTask(for: words)
         case .settings:
             Motion.sheetGrow.run { surfaces.openSettings() }
+        case let .command(token):
+            guard let key = BrowserKey(token: token) else { return }
+            closeFieldAfterChoice()
+            // Once the field is gone: the keys stay the field's while it is up.
+            DispatchQueue.main.asyncAfter(deadline: .now() + (Motion.disabled ? 0 : Motion.fieldClose.duration)) { [weak self] in
+                self?.use(key)
+            }
         case .findOnPage:
             let id = browser.tab?.id
             closeFieldAfterChoice()
