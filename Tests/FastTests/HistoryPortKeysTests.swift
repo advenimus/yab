@@ -246,4 +246,141 @@ struct HistoryPortKeysTests {
         #expect(browser.offers.first?.url == URL(string: "http://localhost:3000/"))
         #expect(Address.url(from: "local" + (browser.ending ?? "")) == URL(string: "http://localhost:3000"))
     }
+
+    // MARK: sync with a device on an older Yab
+
+    /// A device on a Yab from before this change: its records name a
+    /// server's page without the port, the address still has it.
+    private static func olderDevice(_ name: String = "older-mac") throws -> Journal {
+        try Journal(path: nil, device: name)
+    }
+
+    private static func older(_ id: String, _ url: String, _ title: String, last: Double) -> SyncVisit {
+        SyncVisit(id: id, url: url, title: title, last: last)
+    }
+
+    /// Sent up from one journal and taken by another, as the server would.
+    @discardableResult
+    private static func send(_ from: Journal, to: Journal, version: Int64) throws -> [SyncKit.Record] {
+        let out = from.pending().map { ($0.record, version) }
+        try from.sent(out)
+        return try to.receive(out)
+    }
+
+    @Test func portlessKeys() {
+        #expect(History.portless("localhost:3000/blog") == "localhost/blog")
+        #expect(History.portless("localhost:3000") == "localhost")
+        #expect(History.portless("[fd00::1]:3000/a") == "[fd00::1]/a")
+        #expect(History.portless("localhost/blog") == nil)
+        #expect(History.portless("[fd00::1]") == nil)
+        #expect(History.portless("github.com/notifications") == nil)
+    }
+
+    /// The same page from an older device and a newer one, and the older
+    /// device's row for a server with no path: each lands on its server
+    /// here, one place for the pair, on the Mac and on the iPhone.
+    @Test func aMixedPairIsOnePlaceOnItsServer() throws {
+        let mac = try Journal(path: nil, device: "this-mac")
+        let older = try Self.olderDevice()
+        try older.reconcile(SyncShapes.visit, RecordShapes.visits([
+            Self.older("localhost/workspace/pika", "http://localhost:3100/workspace/pika", "Pika (older)", last: 1_000),
+            Self.older("localhost", "http://localhost:4000/", "Muzekit", last: 1_100),
+        ]))
+        let newer = try Journal(path: nil, device: "newer-mac")
+        try newer.reconcile(SyncShapes.visit, RecordShapes.visits([
+            SyncVisit(url: "http://localhost:3100/workspace/pika", title: "Pika", last: 2_000),
+        ]))
+        try Self.send(older, to: mac, version: 1)
+        try Self.send(newer, to: mac, version: 2)
+        let records = mac.all(SyncShapes.visit)
+        #expect(Set(records.map(\.id)) == ["localhost/workspace/pika", "localhost", "localhost:3100/workspace/pika"])
+
+        let history = History([])
+        history.adoptSynced(SyncShapes.visits(from: records))
+        let places = history.visits(since: .distantPast)
+        #expect(Set(places.map(\.key)) == ["localhost:3100/workspace/pika", "localhost:4000"])
+        let pika = try #require(places.first { $0.key == "localhost:3100/workspace/pika" })
+        #expect(pika.count == 1)
+        #expect(pika.title == "Pika")
+        #expect(pika.last == Date(timeIntervalSince1970: 2_000))
+
+        // The iPhone keys a place by its address too (SyncBridge.place).
+        let phone = Set(records.compactMap(SyncVisit.init).map(\.place))
+        #expect(phone == ["localhost:3100/workspace/pika", "localhost:4000"])
+
+        // This Mac's flush leaves the older device's records alone: removed,
+        // it would write them back at each of its flushes.
+        try SyncShapes.tellVisits(places, cuts: [:], into: mac)
+        #expect(mac.all(SyncShapes.visit).allSatisfy { $0.alive() })
+        #expect(mac.pending().allSatisfy { $0.record.id.contains(":") })
+        try mac.sent(mac.pending().map { ($0.record, 3) })
+        try SyncShapes.tellVisits(places, cuts: [:], into: mac)
+        #expect(mac.pendingCount == 0)
+
+        // Gone from this Mac's two weeks: the older record goes with its place.
+        try SyncShapes.tellVisits([], cuts: [:], into: mac)
+        #expect(mac.all(SyncShapes.visit).allSatisfy { !$0.alive() })
+    }
+
+    /// A page deleted by hand on an older device, cut under its key without
+    /// the port, goes from this Mac's server page too.
+    @Test func aCutFromAnOlderDeviceTakesTheServersPage() throws {
+        let page = Visit(url: "http://localhost:3000/blog", key: "localhost:3000/blog", title: "Blog", count: 3,
+                         last: Date(timeIntervalSince1970: 1_000))
+        let other = Visit(url: "http://localhost:4000/blog", key: "localhost:4000/blog", title: "Other blog", count: 1,
+                          last: Date(timeIntervalSince1970: 1_000))
+        let history = History([page, other])
+        let mac = try Journal(path: nil, device: "this-mac")
+        let older = try Self.olderDevice()
+        let record = Self.older("localhost/blog", page.url, page.title, last: 1_000)
+        try older.reconcile(SyncShapes.visit, RecordShapes.visits([record]))
+        try Self.send(older, to: mac, version: 1)
+        // As an older Yab cuts: its fields and when, then removed.
+        var cut = record.fields
+        cut["cut"] = .number(1_500)
+        try older.reconcile(SyncShapes.visit, ["localhost/blog": cut])
+        try older.reconcile(SyncShapes.visit, [:])
+        let received = try Self.send(older, to: mac, version: 2)
+
+        let cuts = SyncShapes.cutVisits(from: received)
+        #expect(cuts.map(\.key) == ["localhost:3000/blog"])
+        #expect(history.dropSynced(cuts).map(\.absoluteString) == [page.url])
+        #expect(history.visits(since: .distantPast).map(\.key) == [other.key])
+    }
+
+    /// A server's page deleted by hand here is cut under the older device's
+    /// key too, so it goes there and isn't sent back. Its row for another
+    /// server on the same host stays.
+    @Test func aCutHereReachesAnOlderDevice() throws {
+        let page = Visit(url: "http://localhost:3000/blog", key: "localhost:3000/blog", title: "Blog", count: 3,
+                         last: Date(timeIntervalSince1970: 1_000))
+        let root = Visit(url: "http://localhost:3000/", key: "localhost:3000", title: "Pika", count: 9,
+                         last: Date(timeIntervalSince1970: 1_000))
+        let history = History([page, root])
+        let mac = try Journal(path: nil, device: "this-mac")
+        let older = try Self.olderDevice()
+        try older.reconcile(SyncShapes.visit, RecordShapes.visits([
+            Self.older("localhost/blog", page.url, page.title, last: 1_000),
+            // The older device's row for the host went to another server.
+            Self.older("localhost", "http://localhost:4000/", "Muzekit", last: 1_000),
+        ]))
+        history.adoptSynced(SyncShapes.visits(from: try Self.send(older, to: mac, version: 1)))
+        try SyncShapes.tellVisits(history.visits(since: .distantPast), cuts: [:], into: mac)
+        try mac.sent(mac.pending().map { ($0.record, 2) })
+
+        history.forget(page.key)
+        history.forget(root.key)
+        try SyncShapes.tellVisits(history.visits(since: .distantPast), cuts: history.takeCuts(), into: mac)
+        let byID = Dictionary(uniqueKeysWithValues: mac.all(SyncShapes.visit).map { ($0.id, $0) })
+        // The older device reads its cut by its own key.
+        let told = SyncShapes.cutVisits(from: [try #require(byID["localhost/blog"])])
+        #expect(told.count == 1)
+        #expect(byID["localhost/blog"]?.alive() == false)
+        #expect(byID["localhost:3000/blog"]?.alive() == false)
+        // Forgetting localhost:3000 doesn't cut the older row for :4000,
+        // kept while this Mac has that server.
+        #expect(byID["localhost"]?.fields["cut"] == nil)
+        #expect(byID["localhost"]?.alive() == true)
+        #expect(history.visits(since: .distantPast).map(\.key) == ["localhost:4000"])
+    }
 }

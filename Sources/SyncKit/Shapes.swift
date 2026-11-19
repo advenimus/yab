@@ -484,6 +484,20 @@ public struct SyncVisit: Equatable, Sendable, Identifiable {
         let path = url.path()
         return (path.isEmpty || path == "/" ? bare : bare + path).lowercased()
     }
+
+    /// The key a record's place has now, read from its address, a removed
+    /// record's too. A Yab from before ports were part of the key still
+    /// names a server's page without its port (`localhost/blog` for
+    /// http://localhost:3000/blog), so its records' ids can differ from
+    /// this. Nil without an address.
+    public static func key(of record: Record) -> String? {
+        guard let address = record.fields["url"]?.string, let url = URL(string: address) else { return nil }
+        return key(url)
+    }
+
+    /// The place's key read from its address (`key(of:)`): the same for an
+    /// older device's record of a page and a newer one's.
+    public var place: String { URL(string: url).map(SyncVisit.key) ?? id }
 }
 
 // MARK: - Settings

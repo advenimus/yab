@@ -306,6 +306,15 @@ final class History: ObservableObject {
         return String(key.prefix { $0 != ":" && $0 != "/" })
     }
 
+    /// The key a Yab from before ports were part of it gives a place:
+    /// `localhost/blog` for `localhost:3000/blog`. Nil for a key without a port.
+    nonisolated static func portless(_ key: String) -> String? {
+        let site = key.prefix { $0 != "/" }
+        let host = bareHost(String(site))
+        guard host.count < site.count else { return nil }
+        return host + key.dropFirst(site.count)
+    }
+
     /// Two places' visits in each space, added up.
     nonisolated private static func joined(_ a: [String: SpaceVisits]?, _ b: [String: SpaceVisits]?) -> [String: SpaceVisits]? {
         guard let b, !b.isEmpty else { return a }
