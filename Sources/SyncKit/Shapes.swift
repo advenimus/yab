@@ -498,6 +498,16 @@ public struct SyncVisit: Equatable, Sendable, Identifiable {
     /// The place's key read from its address (`key(of:)`): the same for an
     /// older device's record of a page and a newer one's.
     public var place: String { URL(string: url).map(SyncVisit.key) ?? id }
+
+    /// The key a Yab from before ports were part of it gives a place:
+    /// `localhost/blog` for `localhost:3000/blog`, `[fd00::1]` for
+    /// `[fd00::1]:3000`. Nil for a key without a port.
+    public static func portless(_ key: String) -> String? {
+        let site = String(key.prefix { $0 != "/" })
+        let host = site.hasPrefix("[") ? String(site.prefix { $0 != "]" }) + "]" : String(site.prefix { $0 != ":" })
+        guard host.count < site.count else { return nil }
+        return host + String(key.dropFirst(site.count))
+    }
 }
 
 // MARK: - Settings

@@ -85,7 +85,7 @@ enum SyncShapes {
     static func cut(_ cuts: [String: Date], in journal: Journal, keeping now: Collection) -> Collection {
         var out: Collection = [:]
         for (key, at) in cuts where now[key] == nil {
-            for id in [key, History.portless(key)].compactMap({ $0 }) {
+            for id in [key, SyncVisit.portless(key)].compactMap({ $0 }) {
                 guard let record = journal.record(.init(collection: visit, id: id)), record.alive(),
                       id == key || SyncVisit.key(of: record) == key else { continue }
                 var fields = record.visible

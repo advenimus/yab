@@ -268,12 +268,12 @@ struct HistoryPortKeysTests {
     }
 
     @Test func portlessKeys() {
-        #expect(History.portless("localhost:3000/blog") == "localhost/blog")
-        #expect(History.portless("localhost:3000") == "localhost")
-        #expect(History.portless("[fd00::1]:3000/a") == "[fd00::1]/a")
-        #expect(History.portless("localhost/blog") == nil)
-        #expect(History.portless("[fd00::1]") == nil)
-        #expect(History.portless("github.com/notifications") == nil)
+        #expect(SyncVisit.portless("localhost:3000/blog") == "localhost/blog")
+        #expect(SyncVisit.portless("localhost:3000") == "localhost")
+        #expect(SyncVisit.portless("[fd00::1]:3000/a") == "[fd00::1]/a")
+        #expect(SyncVisit.portless("localhost/blog") == nil)
+        #expect(SyncVisit.portless("[fd00::1]") == nil)
+        #expect(SyncVisit.portless("github.com/notifications") == nil)
     }
 
     /// The same page from an older device and a newer one, and the older
