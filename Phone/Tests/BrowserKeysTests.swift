@@ -103,7 +103,8 @@ final class BrowserKeysTests: XCTestCase {
         XCTAssertEqual(BrowserKey.settings.modifiers, .command)
         XCTAssertTrue(try press(.settings))
         XCTAssertTrue(app.surfaces.settings)
-        XCTAssertFalse(try press(.settings), "Settings keeps the keys while it is up")
+        XCTAssertTrue(try press(.settings), "still ours with Settings up, never the system's Settings app")
+        XCTAssertTrue(app.surfaces.settings, "and Settings stays as it is")
     }
 
     func testShiftCommandNOpensAPrivateNewTab() throws {
@@ -196,7 +197,11 @@ final class BrowserKeysTests: XCTestCase {
         ]
         for show in cover {
             show()
-            for key in BrowserKey.all { XCTAssertFalse(try press(key), key.title) }
+            // ⌘, alone is still taken, so the system's Settings item never gets it, and does nothing.
+            for key in BrowserKey.all where key != .settings { XCTAssertFalse(try press(key), key.title) }
+            let settingsWereUp = app.surfaces.settings
+            XCTAssertTrue(try press(.settings))
+            XCTAssertEqual(app.surfaces.settings, settingsWereUp)
             XCTAssertNil(app.surfaces.field)
             XCTAssertEqual(app.browser.tab?.id, "second")
             XCTAssertEqual(ids.count, 3)

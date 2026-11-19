@@ -83,6 +83,8 @@ final class BrowserWorkspace {
     }
     /// All Tabs lays three cards whole across an unfolded Duo on its side.
     var galleryAcross: Bool { unfolded && windowSize.width > windowSize.height }
+    /// The iPad's page card, where All Tabs' cards leave from and land.
+    var galleryPageFrame: CGRect? { tabletControls && !paneFrame.isEmpty ? paneFrame : nil }
     /// What the system reserves from a surface this wide at the window's left:
     /// the column beside a page reaches only that edge.
     func sides(ofSurface width: CGFloat) -> ChromeGeometry.Sides {

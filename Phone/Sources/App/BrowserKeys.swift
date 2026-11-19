@@ -11,11 +11,14 @@ enum BrowserKey: Hashable, Sendable {
     case newTab, newPrivateTab, openLocation, closeTab, reopenTab
     case reload, back, forward, find
     case nextTab, previousTab, toggleSidebar, settings
+    /// The Mac's ⇧⌘S: tabs in the sidebar or across the top; Safari's ⇧⌘\ for All Tabs.
+    case toggleTabsInSidebar, allTabs
     /// ⌘1 to ⌘8 the tab at that place, ⌘9 the last one.
     case tab(Int)
 
     static let all: [BrowserKey] = [.newTab, .newPrivateTab, .openLocation, .closeTab, .reopenTab,
-                                    .reload, .back, .forward, .find, .nextTab, .previousTab, .toggleSidebar, .settings]
+                                    .reload, .back, .forward, .find, .nextTab, .previousTab, .toggleSidebar, .settings,
+                                    .toggleTabsInSidebar, .allTabs]
         + (1...9).map { .tab($0) }
 
     var title: String {
@@ -23,6 +26,8 @@ enum BrowserKey: Hashable, Sendable {
         case .newTab: "New Tab"
         case .newPrivateTab: "New Private Tab"
         case .settings: "Settings…"
+        case .toggleTabsInSidebar: "Show Tabs in Sidebar"
+        case .allTabs: "Show All Tabs"
         case .openLocation: "Open Location"
         case .closeTab: "Close Tab"
         case .reopenTab: "Reopen Closed Tab"
@@ -44,6 +49,8 @@ enum BrowserKey: Hashable, Sendable {
         case .openLocation: "l"
         case .newPrivateTab: "n"
         case .settings: ","
+        case .toggleTabsInSidebar: "s"
+        case .allTabs: "\\"
         case .closeTab: "w"
         case .reload: "r"
         case .back: "["
@@ -57,7 +64,7 @@ enum BrowserKey: Hashable, Sendable {
 
     var modifiers: UIKeyModifierFlags {
         switch self {
-        case .reopenTab, .newPrivateTab: [.command, .shift]
+        case .reopenTab, .newPrivateTab, .toggleTabsInSidebar, .allTabs: [.command, .shift]
         case .nextTab: .control
         case .previousTab: [.control, .shift]
         default: .command
@@ -125,11 +132,11 @@ enum BrowserKey: Hashable, Sendable {
         if builder.menu(for: .edit) != nil { builder.insertChild(find, atEndOfMenu: .edit) }
         else { builder.insertSibling(UIMenu(title: "Edit", children: [find]), afterMenu: .file) }
 
-        let reload = inline(viewMenu, [.reload, .toggleSidebar])
+        let reload = inline(viewMenu, [.reload, .toggleSidebar, .toggleTabsInSidebar, .allTabs])
         if builder.menu(for: .view) != nil { builder.insertChild(reload, atStartOfMenu: .view) }
 
         var history: [BrowserKey] = [.back, .forward]
-        if builder.menu(for: .view) == nil { history.insert(contentsOf: [.reload, .toggleSidebar], at: 0) }
+        if builder.menu(for: .view) == nil { history.insert(contentsOf: [.reload, .toggleSidebar, .toggleTabsInSidebar, .allTabs], at: 0) }
         let historyTop = UIMenu(title: "History", identifier: historyMenu, children: history.map(\.command))
         let after: UIMenu.Identifier = builder.menu(for: .view) != nil ? .view : .edit
         builder.insertSibling(historyTop, afterMenu: after)
@@ -146,12 +153,16 @@ extension AppModel {
     /// puts it away.
     func mayUse(_ key: BrowserKey) -> Bool {
         if privateContentBlocked || privateLock.presentsPrompt { return false }
+        // Always ours, Settings up or not: a ⌘, we turn down goes to the
+        // system's own Settings item, which leaves Yab for the Settings app.
+        if key == .settings { return true }
         if surfaces.settings || surfaces.join || surfaces.chat != nil { return false }
         if surfaces.coversChrome { return key == .closeTab && surfaces.field != nil }
         let tab = browser.tab
         switch key {
         case .newTab, .newPrivateTab, .settings: return true
-        case .toggleSidebar: return workspace.tabletControls
+        case .toggleSidebar, .toggleTabsInSidebar: return workspace.tabletControls
+        case .allTabs: return tab != nil
         case .openLocation, .reload, .find: return tab != nil
         case .closeTab: return tab != nil
         case .reopenTab: return backStack.closed != nil
@@ -167,8 +178,13 @@ extension AppModel {
         switch key {
         case .newTab: openNewTab()
         case .newPrivateTab: openNewTab(privately: true)
-        case .settings: openSettingsFromSpaces(at: nil)
+        case .settings:
+            // Taken but idle while something covers the browser (mayUse).
+            guard !surfaces.settings, !surfaces.join, surfaces.chat == nil, !surfaces.coversChrome else { return }
+            openSettingsFromSpaces(at: nil)
         case .toggleSidebar: workspace.sidebarShown.toggle()
+        case .toggleTabsInSidebar: workspace.preferences.tabsInSidebar.toggle()
+        case .allTabs: TabStack.of(self).openGallery()
         case .openLocation: Motion.fieldOpen.run { surfaces.openField(.address) }
         case .closeTab:
             if surfaces.field != nil { field.close(); return }

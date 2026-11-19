@@ -13,6 +13,17 @@ extension Metrics {
         static let rim: CGFloat = 8
         static let paneBar: CGFloat = 44
         static let row: CGFloat = 44
+        /// The Mac's row ground, inside the finger's row.
+        static let rowGround: CGFloat = 36
+        static let clearLine: CGFloat = 28
+        /// The spaces not in front, in the foot: the Mac's dimmed marks.
+        static let dimmedSpace: Double = 0.45
+        /// The Mac's two-finger paging (SpacePaging): the row at half the
+        /// travel, a 0.15 give past the ends, and a let-go speed (points a
+        /// second) that keeps going.
+        static let spacePull: CGFloat = 0.5
+        static let spaceGive: CGFloat = 0.15
+        static let spaceFling: CGFloat = 300
         static let splitGap: CGFloat = 8
         static let resizeTarget: CGFloat = 20
         static let inset: CGFloat = 10
@@ -49,7 +60,11 @@ extension Metrics {
 final class TabletLayoutPreferences {
     @ObservationIgnored private let defaults: UserDefaults?
     var sidebarShown: Bool { didSet { save(sidebarShown, "ipadSidebarShown") } }
-    var addressBars: Bool { didSet { save(addressBars, "ipadAddressBars") } }
+    /// The Mac's Show Address Bar: a band over the page card; off, the
+    /// address is a plate in the sidebar, as the Mac's default.
+    var addressBars: Bool { didSet { save(addressBars, "ipadAddressBar") } }
+    /// The Mac's Show Tabs in Sidebar: off, the tabs go across the top.
+    var tabsInSidebar: Bool { didSet { save(tabsInSidebar, "ipadTabsInSidebar") } }
     var framed: Bool { didSet { save(framed, "ipadPageFrame") } }
     private(set) var sidebarWidth: CGFloat
     private(set) var splitFraction: CGFloat
@@ -60,7 +75,9 @@ final class TabletLayoutPreferences {
             defaults?.object(forKey: key) == nil ? fallback : defaults!.bool(forKey: key)
         }
         sidebarShown = flag("ipadSidebarShown", true)
-        addressBars = flag("ipadAddressBars", true)
+        // A new key: the old one defaulted to the band the Mac keeps off.
+        addressBars = flag("ipadAddressBar", false)
+        tabsInSidebar = flag("ipadTabsInSidebar", true)
         framed = flag("ipadPageFrame", true)
         let width = defaults?.object(forKey: "ipadSidebarWidth") as? Double ?? Double(Metrics.Tablet.sidebar)
         sidebarWidth = Self.width(CGFloat(width))
