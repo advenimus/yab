@@ -180,6 +180,8 @@ final class WebPool: NSObject {
     var onImageSaved: (@MainActor (PageImage.Outcome) -> Void)?
     /// Open in New Tab or Open in Background Tab on a held link (PageLinkMenu).
     var onOpenLink: ((URL, Tab.ID, PageLinkMenu.Opening) -> Void)?
+    /// Whether a link held on this page may open beside it, in a split.
+    var canOpenLinkBeside: ((Tab.ID) -> Bool)?
     /// The ad blocker: each page's lists, for the site it is heading to.
     var shield: Shield?
 
@@ -2340,6 +2342,7 @@ extension WebPool: WKUIDelegate {
                 PageImage.actions(held, in: webView) { [weak self] outcome in self?.onImageSaved?(outcome) }
             } ?? []
             completionHandler(PageLinkMenu.configuration(for: url, from: webView, canDownload: self.allowsDownloadOf(url), image: image,
+                beside: self.canOpenLinkBeside?(id) == true,
                 open: { [weak self, weak webView] opening in
                     guard let self, let webView, self.live[id] === webView else { return }
                     self.onOpenLink?(url, id, opening)
