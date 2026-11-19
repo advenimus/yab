@@ -200,6 +200,23 @@ struct HistoryPortKeysTests {
                                          sites: ["localhost:3000", "localhost:3000/a", "localhost:4000", "github.com", "[::1]:5173"])
         #expect(spread == ["localhost", "news.example", "localhost:3000", "localhost:4000"])
         #expect(History.hiddenPorts([], sites: ["localhost:3000"]).isEmpty)
+        // A server with pages and no row of its own is kept out too.
+        #expect(History.hiddenPorts(["localhost"], sites: ["localhost:5000/app"]) == ["localhost", "localhost:5000"])
+    }
+
+    /// Through a load: a shared row of 1 visit and imported pages of 900
+    /// and 100 on two other ports gives neither port a row, and a host kept
+    /// out before still keeps both servers' pages out of Frequent.
+    @Test func serversWithoutARowStayKeptOut() throws {
+        var visits: [String: Visit] = [
+            "localhost": Visit(url: "http://localhost:3105/", key: "localhost", title: "", count: 1, last: now),
+            "localhost/a": Visit(url: "http://localhost:3000/a", key: "localhost/a", title: "A", count: 900, last: now),
+            "localhost/b": Visit(url: "http://localhost:4000/b", key: "localhost/b", title: "B", count: 100, last: now),
+        ]
+        #expect(History.keyPorts(&visits))
+        #expect(visits["localhost:4000"] == nil)
+        let spread = History.hiddenPorts(["localhost"], sites: visits.keys)
+        #expect(spread.isSuperset(of: ["localhost:3000", "localhost:4000", "localhost:3105"]))
     }
 
     /// In the field: "local" leads with the busiest server, finished with

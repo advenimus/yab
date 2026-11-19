@@ -1134,11 +1134,16 @@ final class History: ObservableObject {
     /// up the next one; it stays out, as a tile removed from Chrome's Most
     /// Visited does, and is still found by typing.
     /// The sites kept out of Frequent with, for each host kept out without
-    /// a port, its servers on other ports, by their rows' keys.
+    /// a port, its servers on other ports: by every place's site, as
+    /// Frequent groups them, since a server's pages can be kept without a
+    /// row of its own.
     nonisolated static func hiddenPorts(_ hidden: Set<String>, sites keys: some Sequence<String>) -> Set<String> {
         guard !hidden.isEmpty else { return hidden }
         var all = hidden
-        for key in keys where !key.contains("/") && hidden.contains(History.bareHost(key)) { all.insert(key) }
+        for key in keys {
+            let site = String(key.prefix { $0 != "/" })
+            if hidden.contains(History.bareHost(site)) { all.insert(site) }
+        }
         return all
     }
 
