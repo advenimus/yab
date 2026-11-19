@@ -180,6 +180,28 @@ struct HistoryPortKeysTests {
         #expect(!history.been(at: URL(string: "https://example.com:8443/")!, in: UUID()))
     }
 
+    /// Keeping a site out of Frequent keeps out that server only.
+    @Test func keepingOneServerOutOfFrequentLeavesTheOthers() throws {
+        let history = History([
+            Visit(url: "https://example.com/", key: "example.com", title: "Example", count: 9, last: now),
+            Visit(url: "https://example.com:8443/", key: "example.com:8443", title: "Console", count: 9, last: now),
+        ])
+        history.forgetFrequent("example.com")
+        let keys = history.frequent(10, now: now).map(\.key)
+        #expect(keys.contains("example.com:8443"))
+        #expect(!keys.contains("example.com"))
+    }
+
+    /// One kept out before a port was part of a place was every server on
+    /// its host: when the history is given its ports, each server's row
+    /// is kept out too, by its own key.
+    @Test func aSiteKeptOutBeforeKeepsItsServersOut() throws {
+        let spread = History.hiddenPorts(["localhost", "news.example"],
+                                         sites: ["localhost:3000", "localhost:3000/a", "localhost:4000", "github.com", "[::1]:5173"])
+        #expect(spread == ["localhost", "news.example", "localhost:3000", "localhost:4000"])
+        #expect(History.hiddenPorts([], sites: ["localhost:3000"]).isEmpty)
+    }
+
     /// In the field: "local" leads with the busiest server, finished with
     /// its port, and Return's row goes there.
     @Test func theFieldFinishesThePort() throws {

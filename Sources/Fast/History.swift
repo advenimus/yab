@@ -282,7 +282,7 @@ final class History: ObservableObject {
         for key in keys(in: space) {
             guard let visit = visits[key], let here = visit.spaces?[id], !visit.title.isEmpty, visit.url.hasPrefix("http") else { continue }
             let host = String(visit.key.prefix { $0 != "/" })
-            guard !hidden(host) else { continue }
+            guard !unfrequent.contains(host) else { continue }
             let score = History.frecency(Visit(url: visit.url, key: visit.key, title: visit.title, count: here.count, last: here.last), now: now)
             if var site = sites[host] {
                 site.score += score
@@ -328,7 +328,7 @@ final class History: ObservableObject {
         var sites: [String: (score: Double, best: Visit, top: Double)] = [:]
         for visit in visits.values where visit.count > 0 && !visit.title.isEmpty && visit.url.hasPrefix("http") {
             let host = String(visit.key.prefix { $0 != "/" })
-            guard !hidden(host) else { continue }
+            guard !unfrequent.contains(host) else { continue }
             let score = History.frecency(visit, now: now)
             if var site = sites[host] {
                 site.score += score
@@ -612,7 +612,18 @@ final class History: ObservableObject {
     init(file: URL) {
         storage = file
         load()
-        if pendingPortKeys { pendingPortKeys = false; save() }
+        if pendingPortKeys {
+            pendingPortKeys = false
+            save()
+            // A site kept out of Frequent before a port was part of a place
+            // was every server on its host: each keeps out now by its own
+            // row. One kept out from now on is only that server.
+            let spread = History.hiddenPorts(unfrequent, sites: visits.keys)
+            if spread != unfrequent {
+                unfrequent = spread
+                if storage == History.file { Store.settings.set(unfrequent.sorted(), forKey: History.unfrequentKey) }
+            }
+        }
         counted = visits.count
         if visits.count > 500 { scheduleIndex() }
     }
@@ -1122,10 +1133,13 @@ final class History: ObservableObject {
     /// for all its pages, so forgetting the page it showed would only bring
     /// up the next one; it stays out, as a tile removed from Chrome's Most
     /// Visited does, and is still found by typing.
-    /// Kept out of Frequent: the site, or, hidden before a port was part
-    /// of a place, every server on its host.
-    private func hidden(_ host: String) -> Bool {
-        unfrequent.contains(host) || unfrequent.contains(History.bareHost(host))
+    /// The sites kept out of Frequent with, for each host kept out without
+    /// a port, its servers on other ports, by their rows' keys.
+    nonisolated static func hiddenPorts(_ hidden: Set<String>, sites keys: some Sequence<String>) -> Set<String> {
+        guard !hidden.isEmpty else { return hidden }
+        var all = hidden
+        for key in keys where !key.contains("/") && hidden.contains(History.bareHost(key)) { all.insert(key) }
+        return all
     }
 
     private(set) lazy var unfrequent: Set<String> = Set(storage == History.file ? Store.settings.stringArray(forKey: History.unfrequentKey) ?? [] : [])
