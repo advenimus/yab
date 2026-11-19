@@ -1197,6 +1197,9 @@ private struct MacTabRow: View {
         Section {
             item("Open Here", .yabTabsPlus) { app.openFromMac(row.tab, in: space) }
             item("Copy Link", .link) { app.copyLink(of: tab) }
+            if !tab.isMail, tab.navigationURL != nil {
+                item("Duplicate Tab", .yabTabPlus) { app.duplicate(tab) }
+            }
             item("Share", .yabShare) { app.share(tab) }
         }
         Section {
