@@ -29,11 +29,16 @@ struct TabletWorkspaceGeometry: Equatable {
             ? Metrics.Workspace.minimumPane * 2 + Metrics.Tablet.splitGap : Metrics.Workspace.minimumPane
         return size.width - width - (framed ? 16 : 0) >= reserved ? width : 0
     }
-    var rim: CGFloat { sidebarWidth > 0 && framed ? 8 : 0 }
+    /// The Mac's card: in from every edge while framed, the sidebar or not.
+    var rim: CGFloat { framed ? Metrics.Tablet.rim : 0 }
     var page: CGRect {
         CGRect(x: sidebarWidth + rim, y: top + rim,
                width: max(1, size.width - sidebarWidth - rim * 2),
                height: max(1, size.height - top - rim * 2))
+    }
+    static func conversation(in size: CGSize, expanded: Bool, chat: Bool) -> CGFloat {
+        let column = Metrics.Workspace.conversation
+        return expanded && chat && size.width >= column + Metrics.Workspace.minimumPane ? column : 0
     }
     func searchHeight(keyboard: CGFloat) -> CGFloat { max(44, min(292, size.height - max(0, keyboard) - top - 40)) }
 }
@@ -42,8 +47,14 @@ struct TabletWorkspaceView: View {
     @Environment(AppModel.self) private var app
     let size: CGSize
     private var preferences: TabletLayoutPreferences { app.workspace.preferences }
+    /// A chat's column stands beside the workspace, as the phone's wide
+    /// layout and the Mac's chat panel do, never over its toolbar or page.
+    private var conversation: CGFloat {
+        TabletWorkspaceGeometry.conversation(in: size, expanded: app.workspace.expanded,
+                                             chat: app.chatSheet.shown && !app.field.shown)
+    }
     private var geometry: TabletWorkspaceGeometry {
-        TabletWorkspaceGeometry(size: size, statusBar: SettingsLayer.statusBar,
+        TabletWorkspaceGeometry(size: CGSize(width: size.width - conversation, height: size.height), statusBar: SettingsLayer.statusBar,
                                 sidebar: preferences.sidebarShown, framed: preferences.framed,
                                 sidebarExtent: preferences.sidebarWidth, paired: app.workspace.paired)
     }
@@ -63,14 +74,14 @@ struct TabletWorkspaceView: View {
         ZStack(alignment: .topLeading) {
             Ink.ground.ignoresSafeArea()
             SpacePagesBackground(spaces: app.browser.spaces, pages: app.browser.spaces.map(\.id), position: CGFloat(app.browser.spaceIndex))
-                .frame(width: size.width, height: size.height - g.top).offset(y: g.top)
+                .frame(width: g.size.width, height: size.height - g.top).offset(y: g.top)
             pages(in: g)
                 .frame(width: g.page.width, height: g.page.height)
                 .padding(.leading, g.page.minX).padding(.top, g.page.minY)
                 .accessibilityHidden(covered || gallery)
             // Keep the outgoing sidebar at its full width while it travels.
             // Removing the conditional view first made its rows vanish at once.
-            TabletSidebar(width: preferences.sidebarWidth)
+            TabletSidebar(width: preferences.sidebarWidth, shown: g.sidebarWidth > 0)
                 .frame(height: size.height - g.top)
                 .offset(x: Motion.reduced || g.sidebarWidth > 0 ? 0 : -preferences.sidebarWidth, y: g.top)
                 .opacity(g.sidebarWidth > 0 ? 1 : 0)
@@ -92,6 +103,7 @@ struct TabletWorkspaceView: View {
                         TabletToolbar(sidebarShown: g.sidebarWidth > 0)
                     }
                 }
+                    .frame(width: g.size.width)
                     .padding(.top, g.statusBar)
                     .environment(\.colorScheme, app.pageIsPrivate ? .dark : AppAppearance.current)
                     .allowsHitTesting(!covered).accessibilityHidden(covered)
@@ -111,6 +123,7 @@ struct TabletWorkspaceView: View {
         }
         .frame(width: size.width, height: size.height)
         .animation(Motion.tabletSidebar.current, value: preferences.sidebarShown)
+        .animation(Motion.tabletSidebar.current, value: conversation)
         .environment(\.colorScheme, app.pageIsPrivate ? .dark : AppAppearance.current)
         .onChange(of: app.field.revision, initial: true) { _, _ in
             if app.field.shown, app.field.mode == .newTab, app.field.resting {
@@ -197,6 +210,11 @@ struct TabletWorkspaceView: View {
 private struct TabletSingleToolbar: View {
     @Environment(AppModel.self) private var app
     let sidebarShown: Bool
+    /// Both sides as wide as the wider, so the address stays centered.
+    private var sideWidth: CGFloat {
+        let trailing = 2 + (app.workspace.canSplit ? 1 : 0) + (app.showsToolbarDownloads(sidebarShown: sidebarShown) ? 1 : 0)
+        return Metrics.touch * CGFloat(max(3, trailing))
+    }
     private var siteOpen: Binding<Bool> {
         Binding(get: { app.surfaces.menu == .plate }, set: { open in
             if !open { app.surfaces.closeMenu(); app.pageMenu.reset() }
@@ -219,7 +237,7 @@ private struct TabletSingleToolbar: View {
                 macTool("Forward", .yabForward, id: "tablet.forward") { app.pageMenuForward() }
                     .disabled(!app.currentPageState.canGoForward)
             }
-            .frame(width: 132)
+            .frame(width: sideWidth, alignment: .leading)
             Spacer(minLength: 0)
             HStack(spacing: 0) {
                 macTool(app.currentPageState.isLoading ? "Stop" : "Reload", app.currentPageState.isLoading ? .yabStop : .yabReload, id: "tablet.reload") {
@@ -230,7 +248,7 @@ private struct TabletSingleToolbar: View {
                     Text(app.browser.tab?.address ?? "Search or enter address")
                         .font(.system(size: Metrics.Chrome.labelFont))
                         .foregroundStyle(Ink.primary).lineLimit(1).truncationMode(.middle)
-                        .frame(maxWidth: .infinity, minHeight: Metrics.touch)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -247,6 +265,7 @@ private struct TabletSingleToolbar: View {
                 }
             }
             .frame(maxWidth: 540)
+            .frame(height: Metrics.Tablet.addressHeight)
             .background(Ink.primary.opacity(0.055), in: Capsule())
             .accessibilityElement(children: .contain).accessibilityIdentifier("tablet.singleAddressBar")
             Spacer(minLength: 0)
@@ -261,10 +280,13 @@ private struct TabletSingleToolbar: View {
                 .accessibilityLabel("Split View").accessibilityIdentifier("workspace.menu")
                 .disabled(app.pageIsPrivate || app.browser.tab == nil || app.browser.tab?.isMail == true)
                 }
+                if app.showsToolbarDownloads(sidebarShown: sidebarShown) {
+                    TabletDownloadsButton(active: true, id: "tablet.downloads")
+                }
                 tool("New Tab", asset: "TabletPlus", id: "tablet.newTab") { app.openNewTab() }
                 macTool("All Tabs", .yabTabs, id: "tablet.tabs") { TabStack.of(app).openGallery() }
             }
-            .frame(width: app.workspace.canSplit ? 132 : 88)
+            .frame(width: sideWidth, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .frame(height: TabletWorkspaceGeometry.toolbar)
@@ -306,6 +328,21 @@ private struct TabletToolbar: View {
                     .frame(width: Metrics.touch, height: Metrics.touch)
                     .accessibilityLabel("Search or enter address").accessibilityValue(app.browser.tab?.address ?? "")
                     .accessibilityIdentifier("tablet.address")
+                // Without address bars this is the only way to the page's controls.
+                Button {
+                    if app.surfaces.menu == .plate { app.surfaces.closeMenu(); app.pageMenu.reset() }
+                    else { app.openPageMenu(); app.pageMenu.shown = true; app.pageMenu.page = .site }
+                } label: {
+                    Glyph(mac: .sliderHorizontal2Square).frame(width: Metrics.touch, height: Metrics.touch).contentShape(Rectangle())
+                }
+                    .frame(width: Metrics.touch, height: Metrics.touch)
+                    .accessibilityLabel("Site Controls").accessibilityIdentifier("tablet.siteControls")
+                    .disabled(app.browser.tab == nil)
+                    .popover(isPresented: Binding(get: { app.surfaces.menu == .plate }, set: { open in
+                        if !open { app.surfaces.closeMenu(); app.pageMenu.reset() }
+                    }), arrowEdge: .top) {
+                        TabletSiteControls().environment(app).presentationCompactAdaptation(.popover)
+                    }
             }
             if app.workspace.canSplit {
                 Menu {
@@ -317,6 +354,9 @@ private struct TabletToolbar: View {
                 } label: { TabletGlyph("TabletSplitView").frame(width: Metrics.touch, height: Metrics.touch) }
                 .accessibilityLabel("Split View").accessibilityIdentifier("workspace.menu")
                 .disabled(app.pageIsPrivate || app.browser.tab == nil || app.browser.tab?.isMail == true)
+            }
+            if app.showsToolbarDownloads(sidebarShown: sidebarShown) {
+                TabletDownloadsButton(active: true, id: "tablet.downloads")
             }
             Button { app.openNewTab() } label: {
                 TabletGlyph("TabletPlus").frame(width: Metrics.touch, height: Metrics.touch).contentShape(Rectangle())
@@ -424,6 +464,7 @@ private struct TabletGlyph: View {
 
 private struct TabletSiteControls: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.colorScheme) private var scheme
     @State private var contentHeight: CGFloat = 280
 
     // The desktop panel's 280-point width, 8-point inset, 28-point row marks,
@@ -440,6 +481,7 @@ private struct TabletSiteControls: View {
         ScrollView {
             Group {
                 if app.pageMenu.page == .certificate, let tab = app.browser.tab { certificate(tab) }
+                else if app.pageMenu.page == .downloads { downloads }
                 else { main }
             }
             .padding(8)
@@ -504,9 +546,16 @@ private struct TabletSiteControls: View {
                             Button("Forget Permission") { app.forgetPermission(kind) }
                         } label: {
                             row(kind.title, subtitle: decision.word,
-                                asset: kind == .camera ? "TabletCamera" : MacGlyph.mic.rawValue, on: decision == .allowed)
+                                asset: kind.tabletAsset, on: decision == .allowed)
                         }
                         .accessibilityIdentifier("site.permission.\(kind.rawValue).decision")
+                    }
+                    let here = app.downloads.list(isPrivate: app.pageIsPrivate, host: app.siteHost(of: tab)).count
+                    if here > 0 {
+                        Button { app.openSiteDownloads() } label: {
+                            row("Downloaded Here", subtitle: here == 1 ? "1 file" : "\(here) files", asset: MacGlyph.yabDownload.rawValue)
+                        }
+                        .buttonStyle(.plain).accessibilityIdentifier("site.downloads.here")
                     }
                 }
             }
@@ -533,6 +582,22 @@ private struct TabletSiteControls: View {
                     .accessibilityLabel("More Site Settings").accessibilityIdentifier("site.more")
                 }
             }
+        }
+    }
+
+    /// Downloaded Here, or every file: the phone's Downloads page in the popover.
+    private var downloads: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { app.pageMenu.page = .site } label: {
+                HStack(spacing: 8) {
+                    Glyph(mac: .yabBack, size: 14)
+                    Text("Site Controls").font(.system(size: 12.5, weight: .medium))
+                    Spacer(minLength: 0)
+                }.frame(minHeight: Metrics.touch).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).padding(.horizontal, 6).accessibilityIdentifier("site.downloads.back")
+            DownloadsBody(ink: PageMenuInk(dark: app.pageIsPrivate || scheme == .dark),
+                          host: app.pageMenu.downloadsHost, isPrivate: app.pageIsPrivate)
         }
     }
 
@@ -597,5 +662,24 @@ private struct TabletSiteControls: View {
             Text(value).foregroundStyle(Ink.secondary).lineLimit(1).truncationMode(.middle)
         }
         .font(.system(size: 12.5)).frame(minHeight: Metrics.touch)
+    }
+}
+
+extension SiteSettings.Permission {
+    /// Site Controls' mark for the permission, in the popover's asset names.
+    var tabletAsset: String {
+        switch self {
+        case .camera: "TabletCamera"
+        case .microphone: MacGlyph.mic.rawValue
+        case .downloads: MacGlyph.yabDownload.rawValue
+        }
+    }
+}
+
+extension AppModel {
+    /// The Mac's rule: the toolbar's downloads button only from the first
+    /// file, and only while the sidebar's foot, which always has one, is away.
+    func showsToolbarDownloads(sidebarShown: Bool) -> Bool {
+        !sidebarShown && (downloads.asking(isPrivate: pageIsPrivate) != nil || !downloads.list(isPrivate: pageIsPrivate).isEmpty)
     }
 }

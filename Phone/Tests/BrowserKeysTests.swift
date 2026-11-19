@@ -98,6 +98,22 @@ final class BrowserKeysTests: XCTestCase {
         XCTAssertFalse(try press(.toggleSidebar), "compact phone and Duo retain their keys")
     }
 
+    func testCommandCommaOpensSettingsAsOnTheMac() throws {
+        XCTAssertEqual(BrowserKey.settings.input, ",")
+        XCTAssertEqual(BrowserKey.settings.modifiers, .command)
+        XCTAssertTrue(try press(.settings))
+        XCTAssertTrue(app.surfaces.settings)
+        XCTAssertFalse(try press(.settings), "Settings keeps the keys while it is up")
+    }
+
+    func testShiftCommandNOpensAPrivateNewTab() throws {
+        XCTAssertEqual(BrowserKey.newPrivateTab.input, "n")
+        XCTAssertEqual(BrowserKey.newPrivateTab.modifiers, [.command, .shift])
+        XCTAssertTrue(try press(.newPrivateTab))
+        XCTAssertEqual(app.surfaces.field, .newTab)
+        XCTAssertTrue(app.field.isPrivate)
+    }
+
     func testCommandLOpensTheAddress() throws {
         XCTAssertTrue(try press(.openLocation))
         XCTAssertEqual(app.surfaces.field, .address)

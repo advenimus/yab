@@ -8,12 +8,32 @@ extension Metrics {
         static let sidebarMinimum: CGFloat = 220
         static let sidebarMaximum: CGFloat = 360
         static let toolbar: CGFloat = 44
+        /// The Mac's 36-point address band, centered in the 44-point row.
+        static let addressHeight: CGFloat = 36
+        static let rim: CGFloat = 8
         static let paneBar: CGFloat = 44
         static let row: CGFloat = 44
         static let splitGap: CGFloat = 8
         static let resizeTarget: CGFloat = 20
         static let inset: CGFloat = 10
         static let pin: CGFloat = 48
+        static let downloadsWidth: CGFloat = 340
+        static let downloadsHeight: CGFloat = 480
+        static let downloadsInset: CGFloat = 8
+        static let downloadDot: CGFloat = 7
+        static let downloadDotInset: CGFloat = 9
+        static let pinGap: CGFloat = 7
+        static let pinMinWidth: CGFloat = 47
+        static let pinMaxColumns = 4
+
+        /// The Mac's SideBar.pinColumns: as many as fit, four at most, then
+        /// only as many as keep the rows even, the row filling the width.
+        static func pinColumns(_ count: Int, width: CGFloat) -> Int {
+            guard count > 0 else { return 1 }
+            let fits = min(pinMaxColumns, max(1, Int((width + pinGap) / (pinMinWidth + pinGap))))
+            let rows = (count + fits - 1) / fits
+            return (count + rows - 1) / rows
+        }
         static let pairInset: CGFloat = 4
         static let pairGap: CGFloat = 4
         static let pairRadius: CGFloat = 5

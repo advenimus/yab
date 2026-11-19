@@ -5,6 +5,8 @@ struct TabletSidebar: View {
     @Environment(AppModel.self) private var app
     @Environment(\.colorScheme) private var scheme
     let width: CGFloat
+    /// On screen: the sidebar stays in the tree, faded, while it is away.
+    var shown = true
     @State private var browseSpaces = false
     private var space: Space { app.browser.space }
     private var shownPins: [Tab] { app.sync.pins(in: space) }
@@ -15,7 +17,9 @@ struct TabletSidebar: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if !shownPins.isEmpty {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: 4), spacing: 7) {
+                        let columns = Metrics.Tablet.pinColumns(shownPins.count, width: width - 2 * Metrics.Tablet.inset)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Metrics.Tablet.pinGap), count: columns),
+                                  spacing: Metrics.Tablet.pinGap) {
                             ForEach(shownPins) { tab in
                                 Button { select(tab) } label: {
                                     mark(tab, size: 24).frame(maxWidth: .infinity).frame(height: Metrics.Tablet.pin)
@@ -128,20 +132,8 @@ struct TabletSidebar: View {
 
     private var footer: some View {
         HStack(spacing: 2) {
-            Button { app.openSettingsFromSpaces(at: nil) } label: {
-                Glyph(SettingsFieldRow.glyph, size: 17).frame(width: Metrics.touch, height: Metrics.touch).contentShape(Rectangle())
-            }
-                .frame(width: Metrics.touch, height: Metrics.touch).accessibilityLabel("Settings")
-                .contextMenu {
-                    Button("Spaces and Chats") { browseSpaces = true }
-                }
-                .popover(isPresented: $browseSpaces) {
-                    SpacePagesCard(content: NewTabContent.make(for: app), width: Metrics.Workspace.sidebar,
-                                   maxHeight: TabletWorkspaceGeometry.sheetHeight, fullness: 1,
-                                   headerInset: SpacePagesCard.capsuleTop)
-                        .environment(app).presentationCompactAdaptation(.popover)
-                }
-                .accessibilityIdentifier("tablet.settings")
+            // The Mac's foot: downloads first, then the spaces, then +.
+            TabletDownloadsButton(active: shown, id: "tablet.downloads.sidebar")
             ScrollView(.horizontal) {
                 HStack(spacing: 2) {
                     ForEach(app.browser.spaces.filter { !$0.isPrivate }) { item in
@@ -160,11 +152,27 @@ struct TabletSidebar: View {
                     }
                 }
             }.scrollIndicators(.hidden)
-            Button { app.openNewTab() } label: {
+            Menu {
+                Button { app.openNewTab() } label: { Label("New Tab", image: MacGlyph.yabTabPlus.rawValue) }
+                    .accessibilityIdentifier("tablet.sidebar.menu.newTab")
+                Button { app.openNewTab(privately: true) } label: { Label("New Private Tab", image: MacGlyph.incognito.rawValue) }
+                    .accessibilityIdentifier("tablet.sidebar.menu.newPrivateTab")
+                Divider()
+                Button("Spaces and Chats") { browseSpaces = true }
+                    .accessibilityIdentifier("tablet.sidebar.menu.spaces")
+            } label: {
                 Glyph(.plusMedium, size: 18).frame(width: Metrics.touch, height: Metrics.touch).contentShape(Rectangle())
+            } primaryAction: {
+                app.openNewTab()
             }
                 .frame(width: Metrics.touch, height: Metrics.touch).accessibilityLabel("New Tab")
                 .accessibilityIdentifier("tablet.sidebar.newTab")
+                .popover(isPresented: $browseSpaces) {
+                    SpacePagesCard(content: NewTabContent.make(for: app), width: Metrics.Workspace.sidebar,
+                                   maxHeight: TabletWorkspaceGeometry.sheetHeight, fullness: 1,
+                                   headerInset: SpacePagesCard.capsuleTop)
+                        .environment(app).presentationCompactAdaptation(.popover)
+                }
         }
         .buttonStyle(.plain).foregroundStyle(Ink.primary)
         .padding(.horizontal, 4).padding(.vertical, 6)

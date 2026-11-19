@@ -99,8 +99,12 @@ final class TabletLayoutUITests: XCTestCase {
 
     func testExistingAppearanceCanHideAddressBarsAndSearchRemainsAvailable() throws {
         launch("page.1")
-        element("tablet.settings").tap()
+        // Settings lives in the app's menu, as on the Mac: ⌘,.
         let appearance = app.buttons["settings.row.appearance"]
+        for _ in 0..<8 {
+            app.typeKey(",", modifierFlags: .command)
+            if appearance.waitForExistence(timeout: 1) { break }
+        }
         XCTAssertTrue(appearance.waitForExistence(timeout: 15)); appearance.tap()
         let bars = app.switches["settings.row.appearance.addressBars"]
         if !bars.isHittable { app.swipeUp() }
@@ -125,9 +129,48 @@ final class TabletLayoutUITests: XCTestCase {
         try picture("09-hidden-bars-command-L")
     }
 
+    /// A site's first file asks from the sidebar's downloads button, and is answerable.
+    func testFirstDownloadAsksFromTheDownloadsButton() throws {
+        launch("downloads.ask")
+        XCTAssertEqual(app.buttons["tablet.downloads.sidebar"].value as? String, "Asking")
+        let download = app.buttons["download.ask.download"]
+        XCTAssertTrue(download.waitForExistence(timeout: 15))
+        XCTAssertTrue(download.isHittable)
+        try picture("12-download-ask")
+        download.tap()
+        XCTAssertTrue(wait { !download.exists })
+    }
+
+    func testDownloadsButtonListsFiles() throws {
+        launch("downloads.now")
+        app.buttons["tablet.downloads.sidebar"].tap()
+        XCTAssertTrue(element("downloads.page").waitForExistence(timeout: 10))
+        try picture("13-downloads-list")
+    }
+
+    /// All Tabs: a tap on any card takes that tab, the gallery goes, the workspace returns.
+    func testAllTabsCardsOpenTheirTab() throws {
+        launch("page.1")
+        app.buttons["tablet.tabs"].tap()
+        XCTAssertTrue(element("tabs.gallery").waitForExistence(timeout: 10))
+        try picture("14-all-tabs")
+        let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tabs.card.'"))
+        XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 10))
+        let card = (0..<cards.count).map { cards.element(boundBy: $0) }.first { $0.isHittable }
+        let chosen = try XCTUnwrap(card, "no card can be tapped")
+        let id = String(chosen.identifier.dropFirst("tabs.card.".count))
+        chosen.tap()
+        let gone = wait { !self.element("tabs.gallery").exists }
+        if !gone { try picture("15-all-tabs-stuck") }
+        XCTAssertTrue(gone, "the gallery stayed after a tap on \(id)")
+        // The cards overlap, so the tab taken is whichever lies on top there: the workspace is back.
+        XCTAssertTrue(app.buttons["tablet.address"].waitForExistence(timeout: 10))
+        try picture("15-all-tabs-chosen")
+    }
+
     func testNewTabStaysInTheSpaceChosenInTheFooterAfterBrowsingSpaces() throws {
         launch("page.1")
-        element("tablet.settings").press(forDuration: 1)
+        element("tablet.sidebar.newTab").press(forDuration: 1)
         let browse = app.buttons["Spaces and Chats"]
         XCTAssertTrue(browse.waitForExistence(timeout: 5)); browse.tap()
         XCTAssertTrue(element("newtab.spaces").waitForExistence(timeout: 10))

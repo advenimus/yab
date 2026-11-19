@@ -8,19 +8,21 @@ let keysLog = Logger(subsystem: "dev.serafim.fast.iphone", category: "keys")
 /// an iPad lists them, and ⌘W is the tab's: the system's Close Window, which
 /// closes a single-window app outright, is taken out of the menu.
 enum BrowserKey: Hashable, Sendable {
-    case newTab, openLocation, closeTab, reopenTab
+    case newTab, newPrivateTab, openLocation, closeTab, reopenTab
     case reload, back, forward, find
-    case nextTab, previousTab, toggleSidebar
+    case nextTab, previousTab, toggleSidebar, settings
     /// ⌘1 to ⌘8 the tab at that place, ⌘9 the last one.
     case tab(Int)
 
-    static let all: [BrowserKey] = [.newTab, .openLocation, .closeTab, .reopenTab,
-                                    .reload, .back, .forward, .find, .nextTab, .previousTab, .toggleSidebar]
+    static let all: [BrowserKey] = [.newTab, .newPrivateTab, .openLocation, .closeTab, .reopenTab,
+                                    .reload, .back, .forward, .find, .nextTab, .previousTab, .toggleSidebar, .settings]
         + (1...9).map { .tab($0) }
 
     var title: String {
         switch self {
         case .newTab: "New Tab"
+        case .newPrivateTab: "New Private Tab"
+        case .settings: "Settings…"
         case .openLocation: "Open Location"
         case .closeTab: "Close Tab"
         case .reopenTab: "Reopen Closed Tab"
@@ -40,6 +42,8 @@ enum BrowserKey: Hashable, Sendable {
         switch self {
         case .newTab, .reopenTab: "t"
         case .openLocation: "l"
+        case .newPrivateTab: "n"
+        case .settings: ","
         case .closeTab: "w"
         case .reload: "r"
         case .back: "["
@@ -53,7 +57,7 @@ enum BrowserKey: Hashable, Sendable {
 
     var modifiers: UIKeyModifierFlags {
         switch self {
-        case .reopenTab: [.command, .shift]
+        case .reopenTab, .newPrivateTab: [.command, .shift]
         case .nextTab: .control
         case .previousTab: [.control, .shift]
         default: .command
@@ -89,6 +93,7 @@ enum BrowserKey: Hashable, Sendable {
     static let viewMenu = UIMenu.Identifier("dev.serafim.fast.iphone.keys.view")
     static let historyMenu = UIMenu.Identifier("dev.serafim.fast.iphone.keys.history")
     static let tabsMenu = UIMenu.Identifier("dev.serafim.fast.iphone.keys.switch")
+    static let settingsMenu = UIMenu.Identifier("dev.serafim.fast.iphone.keys.settings")
 
     /// File holds the tabs, View Reload, History Back and Forward, Window
     /// the tab switching, Edit Find on Page: where Safari keeps them.
@@ -106,7 +111,13 @@ enum BrowserKey: Hashable, Sendable {
         // The system's Find would reach only a focused web view, not the tab in front.
         builder.remove(menu: .find)
 
-        let tabs = inline(filesMenu, [.newTab, .openLocation, .closeTab, .reopenTab])
+        // Settings where the Mac keeps it, in the app's own menu under About.
+        let settings = inline(settingsMenu, [.settings])
+        if builder.menu(for: .preferences) != nil { builder.replace(menu: .preferences, with: settings) }
+        else if builder.menu(for: .about) != nil { builder.insertSibling(settings, afterMenu: .about) }
+        else if builder.menu(for: .application) != nil { builder.insertChild(settings, atStartOfMenu: .application) }
+
+        let tabs = inline(filesMenu, [.newTab, .newPrivateTab, .openLocation, .closeTab, .reopenTab])
         if builder.menu(for: .file) != nil { builder.insertChild(tabs, atStartOfMenu: .file) }
         else { builder.insertSibling(UIMenu(title: "File", children: [tabs]), afterMenu: .application) }
 
@@ -139,7 +150,7 @@ extension AppModel {
         if surfaces.coversChrome { return key == .closeTab && surfaces.field != nil }
         let tab = browser.tab
         switch key {
-        case .newTab: return true
+        case .newTab, .newPrivateTab, .settings: return true
         case .toggleSidebar: return workspace.tabletControls
         case .openLocation, .reload, .find: return tab != nil
         case .closeTab: return tab != nil
@@ -155,6 +166,8 @@ extension AppModel {
         guard mayUse(key) else { return }
         switch key {
         case .newTab: openNewTab()
+        case .newPrivateTab: openNewTab(privately: true)
+        case .settings: openSettingsFromSpaces(at: nil)
         case .toggleSidebar: workspace.sidebarShown.toggle()
         case .openLocation: Motion.fieldOpen.run { surfaces.openField(.address) }
         case .closeTab:
