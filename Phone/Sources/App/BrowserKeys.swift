@@ -186,6 +186,12 @@ extension AppModel {
         if key == .settings { return true }
         if surfaces.settings || surfaces.join || surfaces.chat != nil { return false }
         if surfaces.coversChrome { return key == .closeTab && surfaces.field != nil }
+        return offers(key)
+    }
+
+    /// Whether the key has something to do for the browser as it is, with
+    /// nothing over it: the field asks this of the commands it offers.
+    func offers(_ key: BrowserKey) -> Bool {
         let tab = browser.tab
         switch key {
         case .newTab, .newPrivateTab, .settings: return true
@@ -249,5 +255,52 @@ extension AppModel {
         closeWorkspacePage()
         guard browser.tab(id) == nil else { return }
         if let closed { backStack.offer(closed) }
+    }
+}
+
+extension BrowserKey {
+    /// Kept out of the field: a tab by place, the field itself, Find (the
+    /// field's own On This Page row) and Settings (its own row).
+    var commandable: Bool {
+        switch self {
+        case .tab, .nextTab, .previousTab, .openLocation, .find, .settings: false
+        default: true
+        }
+    }
+
+    /// Other words the field knows a command by.
+    var aliases: [String] {
+        switch self {
+        case .newPrivateTab: ["private", "incognito"]
+        case .reopenTab: ["reopen", "undo close"]
+        case .reload: ["refresh"]
+        case .zoomIn: ["bigger", "larger"]
+        case .zoomOut: ["smaller"]
+        case .actualSize: ["reset zoom", "100%"]
+        case .reader: ["reader", "reading mode"]
+        case .copyLink: ["copy address", "copy url"]
+        case .toggleSidebar: ["sidebar", "hide sidebar"]
+        case .allTabs: ["tabs", "tab overview"]
+        default: []
+        }
+    }
+
+    /// The keys as the menu writes them: ⇧⌘R.
+    var shortcut: String {
+        var marks = ""
+        if modifiers.contains(.control) { marks += "⌃" }
+        if modifiers.contains(.alternate) { marks += "⌥" }
+        if modifiers.contains(.shift) { marks += "⇧" }
+        if modifiers.contains(.command) { marks += "⌘" }
+        let key = switch input { case "\t": "⇥"; case "=": "+"; default: input.uppercased() }
+        return marks + key
+    }
+}
+
+extension AppModel {
+    /// The menu actions the field offers now (Words.commandRows).
+    var commandCandidates: [CommandCandidate] {
+        BrowserKey.all.filter { $0.commandable && offers($0) }
+            .map { CommandCandidate(token: $0.token, title: $0.title, aliases: $0.aliases, shortcut: $0.shortcut) }
     }
 }
