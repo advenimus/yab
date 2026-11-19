@@ -219,7 +219,7 @@ final class WebPool: NSObject {
         // WebKit's player offers Picture in Picture, inline video too, and a
         // playing video goes on in it with Yab away (PagePlayback).
         configuration.allowsPictureInPictureMediaPlayback = true
-        configuration.defaultWebpagePreferences.preferredContentMode = .mobile
+        configuration.defaultWebpagePreferences.preferredContentMode = Self.defaultContentMode
         // Every page zooms with two fingers, paying no mind to a page's
         // user-scalable=no or maximum-scale: Google Images'
         // viewer says both, so its picture could not be pinched larger.
@@ -2094,7 +2094,7 @@ extension WebPool: WKNavigationDelegate {
         let policy = await decidePolicy(webView, for: action)
         // Request Desktop Site, remembered per site (SiteSettings).
         if policy == .allow, action.targetFrame?.isMainFrame == true, let id = tabsByView[ObjectIdentifier(webView)] {
-            preferences.preferredContentMode = desktop(id, url: action.request.url) ? .desktop : .mobile
+            preferences.preferredContentMode = contentMode(id, url: action.request.url)
             // And the blocker, on or off for where it is going.
             fitShield(webView.configuration.userContentController, for: id, url: action.request.url)
         }
