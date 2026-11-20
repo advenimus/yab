@@ -160,14 +160,14 @@ struct CookieStepPaceTests {
         let bridge = try ChromiumDRMCookies.of(chromium)
         defer { ChromiumDRMCookies.retirePrivate(bridge.profile) }
         let frame = host("frame"), site = try #require(frame.host())
-        bridge.touched(host("chromium-page"), by: .chromium, in: chromium.id)
+        bridge.pageCommitted(host("chromium-page"), by: .chromium, in: chromium.id)
         bridge.touched(frame, mainFrame: false, by: .chromium, in: chromium.id)
         bridge.touched(frame, mainFrame: false, by: .webKit, in: web.id)
         // In a frame on each engine: shared, so quick, and every pass reads it.
         #expect(bridge.paceForTesting.wait == 3)
         #expect(bridge.paceForTesting.shared == [site])
         // The Chromium page goes to another site: its frames went with the document.
-        bridge.touched(host("elsewhere"), by: .chromium, in: chromium.id)
+        bridge.pageCommitted(host("elsewhere"), by: .chromium, in: chromium.id)
         #expect(bridge.paceForTesting.wait > 20)
         #expect(bridge.paceForTesting.shared.isEmpty)
         // Back in a frame there, then the WebKit tab closed: no longer open on WebKit.
@@ -225,6 +225,69 @@ struct CookieStepPaceTests {
         #expect(try await due(bridge) > 20)
         // Its first request counted at a wait already over: the commit is what says so now.
         page.receive(YabCoreEvent(name: "page.committed", params: ["tab": .string(remote), "url": .string(site.absoluteString)]))
+        #expect(try await due(bridge) <= 3.5)
+    }
+    /// A frame on each engine for one host, read as shared.
+    private func sharedFrame(_ bridge: ChromiumDRMCookies, _ made: (browser: Browser, chromium: Tab, web: Tab)) throws -> (url: URL, host: String) {
+        let frame = host("frame")
+        bridge.touched(frame, mainFrame: false, by: .chromium, in: made.chromium.id)
+        bridge.touched(frame, mainFrame: false, by: .webKit, in: made.web.id)
+        let site = try #require(frame.host())
+        #expect(bridge.paceForTesting.shared == [site])
+        return (frame, site)
+    }
+
+    @Test func aNavigationThatNeverCommitsKeepsThePagesFrames() throws {
+        let restore = sight(active: false, windows: false)
+        defer { restore() }
+        let window = window()
+        let made = pair(window)
+        defer { letGo(made.browser, window) }
+        let bridge = try ChromiumDRMCookies.of(made.chromium)
+        defer { ChromiumDRMCookies.retirePrivate(bridge.profile) }
+        let frame = try sharedFrame(bridge, made)
+        // A click that turns into a download: the document and its frames stay.
+        bridge.touched(host("download"), by: .chromium, in: made.chromium.id)
+        #expect(bridge.paceForTesting.shared == [frame.host])
+        // Another site committed: they went with the old document.
+        bridge.pageCommitted(host("elsewhere"), by: .chromium, in: made.chromium.id)
+        #expect(bridge.paceForTesting.shared.isEmpty)
+    }
+
+    @Test func aTabChangingEngineLeavesItsFramesBehind() throws {
+        let restore = sight(active: false, windows: false)
+        defer { restore() }
+        let window = window()
+        let made = pair(window)
+        defer { letGo(made.browser, window) }
+        let bridge = try ChromiumDRMCookies.of(made.chromium)
+        defer { ChromiumDRMCookies.retirePrivate(bridge.profile) }
+        let site = host("site")
+        bridge.pageCommitted(site, by: .webKit, in: made.web.id)
+        _ = try sharedFrame(bridge, made)
+        // The WebKit tab's site goes to Chromium in the same tab: its WebKit frames are no Chromium page's.
+        bridge.touched(site, by: .chromium, in: made.web.id)
+        bridge.pageCommitted(site, by: .chromium, in: made.web.id)
+        #expect(bridge.paceForTesting.shared.isEmpty)
+    }
+
+    @Test func aSmallWindowComingIntoViewCutsASlowWaitShort() async throws {
+        let restore = sight(active: true, windows: false)
+        defer { restore() }
+        let window = window()
+        let made = pair(window)
+        defer { letGo(made.browser, window) }
+        let page = try #require(made.chromium.page as? ChromiumPage)
+        let bridge = try ChromiumDRMCookies.of(made.chromium)
+        defer { ChromiumDRMCookies.retirePrivate(bridge.profile) }
+        // In a small window of its own, not a browser window, covered.
+        let small = self.window()
+        defer { small.close() }
+        small.contentView?.addSubview(page)
+        bridge.keepInStep()
+        #expect(try await due(bridge) > 20)
+        ChromiumDRMCookies.windowInSight = { _ in true }
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: small)
         #expect(try await due(bridge) <= 3.5)
     }
 }

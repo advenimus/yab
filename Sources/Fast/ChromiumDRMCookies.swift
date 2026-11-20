@@ -225,9 +225,10 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     private var visited: [String] = []
     private var framed: [String] = []
     /// Frame hosts by the page that loaded them, most recent first, while
-    /// that page is open and on that site: a site in a frame on one engine
-    /// and a page on the other is open on both.
-    private var frames: [Tab.ID: (site: String?, hosts: [String])] = [:]
+    /// that page is open, on that engine and on the site it last committed:
+    /// a site in a frame on one engine and a page on the other is open on both.
+    private var frames: [Tab.ID: Framed] = [:]
+    private struct Framed { var site: String?; var engine: PageEngineKind; var hosts: [String] = [] }
     private var dirty = Set<String>()
     private var webKitChanged = false
     private var paths: [String: Set<String>] = [:]
@@ -353,15 +354,10 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
             framed.removeAll { $0 == host }; framed.insert(host, at: 0)
             if framed.count > Self.remembered { framed.removeLast() }
         }
-        if let page {
-            var held = frames[page] ?? (nil, [])
-            if mainFrame {
-                // Another site: the frames went with the document they were in.
-                if held.site != host { held = (host, []) }
-            } else {
-                held.hosts.removeAll { $0 == host }; held.hosts.insert(host, at: 0)
-                held.hosts = Array(held.hosts.prefix(Self.remembered))
-            }
+        if let page, let engine, !mainFrame {
+            var held = frames[page].flatMap { $0.engine == engine ? $0 : nil } ?? Framed(site: nil, engine: engine)
+            held.hosts.removeAll { $0 == host }; held.hosts.insert(host, at: 0)
+            held.hosts = Array(held.hosts.prefix(Self.remembered))
             frames[page] = held
         }
         // A frame, a redirect's hop or Yab's own request may open a host the
@@ -373,6 +369,18 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     /// split, a small window, unhidden) or committed a new address, which a
     /// first request counted at a wait already over no longer stands for.
     func pageChanged() { quickenStep() }
+
+    /// A page committed `url`: on another site or engine, the frames went
+    /// with the document they were in. Not at the request, which may never
+    /// commit (a download, a 204, a stop).
+    func pageCommitted(_ url: URL?, by engine: PageEngineKind, in page: Tab.ID?) {
+        if let page {
+            let site = url.flatMap(Self.host)
+            if let held = frames[page], held.site != site || held.engine != engine { frames[page] = nil }
+            if frames[page] == nil { frames[page] = Framed(site: site, engine: engine) }
+        }
+        pageChanged()
+    }
 
     /// A document finished: what its hops set is in the jar by now.
     func pageFinished(_ url: URL?) {
@@ -505,9 +513,10 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     private static let stepPower = NSObject()
 
     /// Yab back in front: a pass at once, rather than at the end of a slow
-    /// wait. A window shown or made key, power saving over: the quicker
-    /// pace from now, if the step was waiting out a slower one. A page
-    /// coming on screen within a window says so itself (`pageChanged`).
+    /// wait. Power saving over: the quicker pace from now, if the step was
+    /// waiting out a slower one. A Chromium page coming on screen says so
+    /// itself (`pageChanged`), its window's occlusion too, whichever window
+    /// it is in: what is in sight is read from the pages, not the windows.
     private static func wakeStepWhenSeen() {
         guard stepWakes.isEmpty else { return }
         Thrift.watch(stepPower) { _ in
@@ -515,9 +524,8 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
         }
         let center = NotificationCenter.default
         func on(_ name: Notification.Name, now: Bool) {
-            stepWakes.append(center.addObserver(forName: name, object: nil, queue: .main) { note in
+            stepWakes.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
                 MainActor.assumeIsolated {
-                    if let window = note.object as? NSWindow, BrowserWindows.shared.browser(for: window) == nil { return }
                     for bridge in sessions.values where bridge.stepping != nil || bridge.activeEngine != nil {
                         if now, bridge.stepDue.map({ $0.timeIntervalSinceNow > Self.stepEvery }) ?? true {
                             bridge.restartStep(now: true)
@@ -527,8 +535,6 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
             })
         }
         on(NSApplication.didBecomeActiveNotification, now: true)
-        on(NSWindow.didChangeOcclusionStateNotification, now: false)
-        on(NSWindow.didBecomeKeyNotification, now: false)
         on(Notification.Name.NSProcessInfoPowerStateDidChange, now: false)
     }
 
@@ -581,9 +587,10 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     /// While Chromium has pages, WebKit's jar follows it: the jar is what Yab's
     /// own requests send, and the next WebKit page's frames and requests.
     func keepInStep(now: Bool = false, adding: (host: String, engine: PageEngineKind)? = nil) {
+        guard automaticSynchronization, !retired else { return }
         if let adding, !stepShare.contains(where: { $0 == adding }) { stepShare.append(adding) }
         quickenStep()
-        guard stepping == nil, automaticSynchronization, !retired else { return }
+        guard stepping == nil else { return }
         Self.wakeStepWhenSeen()
         stepping = Task { @MainActor [weak self] in
             var wait = !now
@@ -621,7 +628,8 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
             guard !tab.gone, let page = tab.builtPage, holds(tab.pageStore) else { continue }
             open.insert(tab.id)
             let host = page.url.flatMap(Self.host)
-            let hosts = (host.map { [$0] } ?? []) + (frames[tab.id]?.hosts ?? [])
+            let framed = frames[tab.id].flatMap { $0.engine == page.engine ? $0.hosts : nil } ?? []
+            let hosts = (host.map { [$0] } ?? []) + framed
             if page.engine == .chromium {
                 chromium.formUnion(hosts)
                 if let host { pages.insert(host) }

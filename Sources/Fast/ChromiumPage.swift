@@ -1108,7 +1108,7 @@ final class ChromiumPage: YabTextCheckingView, PageHandle, PageAudioControl {
             title = ""
             stateEvents?.page(self, changed: .title(""))
             committedURL = committed; events?.page(self, navigation: .committed(navigation))
-            ChromiumDRMCookies.session(of: tab)?.pageChanged()
+            ChromiumDRMCookies.session(of: tab)?.pageCommitted(committed, by: .chromium, in: tab?.id)
             firstPaintMayHaveCome()
         case "page.finished":
             readCertificate()
@@ -1546,6 +1546,7 @@ final class ChromiumPage: YabTextCheckingView, PageHandle, PageAudioControl {
         restoreSurfaceAttachment()
         syncGeometry()
         focusChanged()
+        ChromiumDRMCookies.session(of: tab)?.pageChanged()
     }
     /// Surface ownership acknowledgement. Every layer.changed says which
     /// document and renderer the compositor shows and whether the helper

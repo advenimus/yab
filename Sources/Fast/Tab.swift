@@ -2255,7 +2255,7 @@ final class Tab: ObservableObject, Identifiable, Relaying {
         if engineFactory.kinds.contains(.chromium) {
             web.navigationEvents.redirected = { [weak self] url in ChromiumDRMCookies.session(of: self)?.touched(url, by: .webKit, in: self?.id) }
             web.navigationEvents.prepareFrame = { [weak self] url in await ChromiumDRMCookies.session(of: self)?.prepareFrame(url, in: self?.id) }
-            web.navigationEvents.committed = { [weak self] in ChromiumDRMCookies.session(of: self)?.pageChanged() }
+            web.navigationEvents.committed = { [weak self] url in ChromiumDRMCookies.session(of: self)?.pageCommitted(url, by: .webKit, in: self?.id) }
         }
         if sibling != nil || spare != nil { configuration.perform(Tab.relatedSelector, with: nil) }
         if let spare {

@@ -68,7 +68,7 @@ final class WebKitPageEvents: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// A hop of a WebKit navigation: a sign-in leaves cookies on the way.
     var redirected: ((URL) -> Void)?
     /// A WebKit navigation committed: the page has its new address.
-    var committed: (() -> Void)?
+    var committed: ((URL?) -> Void)?
     var popups: [UUID: WebKitPopup] = [:]
     private var loadRetry = DNSRetry()
     private weak var recoveryPage: PageView?
@@ -211,7 +211,7 @@ final class WebKitPageEvents: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard let page = webView as? PageView else { return }
         currentNavigation = navigation?.pageNavigation
         cancelLoadRetry()
-        committed?()
+        committed?(webView.url)
         listener?.page(page, navigation: .committed(navigation?.pageNavigation))
     }
 
