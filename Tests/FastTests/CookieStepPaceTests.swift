@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Testing
+import YabCoreClient
 @testable import Fast
 
 /// The cookie step's pace from a live bridge: quick while a host is open on
@@ -188,5 +189,42 @@ struct CookieStepPaceTests {
         bridge.touched(site, mainFrame: false, by: .webKit)
         // No page holds either: nothing stays open on both.
         #expect(bridge.paceForTesting.wait > 20)
+    }
+    @Test func bothEnginesLoadingOneNewHostCutsASlowWaitShort() async throws {
+        let restore = sight(active: false, windows: false)
+        defer { restore() }
+        let window = window()
+        let made = pair(window)
+        defer { letGo(made.browser, window) }
+        let bridge = try ChromiumDRMCookies.of(made.chromium)
+        defer { ChromiumDRMCookies.retirePrivate(bridge.profile) }
+        bridge.keepInStep()
+        #expect(try await due(bridge) > 20)
+        // Both first requests before either page has the address.
+        let site = host("both")
+        bridge.touched(site, by: .webKit, in: made.web.id)
+        bridge.touched(site, by: .chromium, in: made.chromium.id)
+        #expect(try await due(bridge) <= 3.5)
+    }
+
+    @Test func aChromiumPageArrivingOnAHostWebKitHasCutsASlowWaitShort() async throws {
+        let restore = sight(active: false, windows: false)
+        defer { restore() }
+        let window = window()
+        let made = pair(window)
+        defer { letGo(made.browser, window) }
+        let page = try #require(made.chromium.page as? ChromiumPage)
+        let remote = "pace-" + UUID().uuidString
+        page.adoptRemote(remote)
+        defer { ChromiumProcess.shared.detach(remote) }
+        let bridge = try ChromiumDRMCookies.of(made.chromium)
+        defer { ChromiumDRMCookies.retirePrivate(bridge.profile) }
+        let site = host("arriving")
+        bridge.touched(site, mainFrame: false, by: .webKit, in: made.web.id)
+        bridge.keepInStep()
+        #expect(try await due(bridge) > 20)
+        // Its first request counted at a wait already over: the commit is what says so now.
+        page.receive(YabCoreEvent(name: "page.committed", params: ["tab": .string(remote), "url": .string(site.absoluteString)]))
+        #expect(try await due(bridge) <= 3.5)
     }
 }

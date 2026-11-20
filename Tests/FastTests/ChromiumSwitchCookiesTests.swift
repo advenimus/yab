@@ -393,6 +393,9 @@ struct ChromiumSwitchCookiesTests {
         #expect(!Step.shares(chromium: ["a.test"], webKit: [], adding: [("a.test", .chromium)]))
         // Several on their way: any one of them shared is enough.
         #expect(Step.shares(chromium: ["a.test"], webKit: [], adding: [("b.test", .webKit), ("a.test", .webKit)]))
+        // Both engines' first requests to one new host, neither page there yet.
+        #expect(Step.shares(chromium: [], webKit: [], adding: [("n.test", .webKit), ("n.test", .chromium)]))
+        #expect(!Step.shares(chromium: [], webKit: [], adding: [("n.test", .webKit), ("m.test", .chromium)]))
     }
 
     @MainActor @Test func ledgerSavesLandInTheOrderTheyStartAndTheLastIsTheNewest() async throws {

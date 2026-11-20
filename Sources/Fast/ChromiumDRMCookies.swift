@@ -369,9 +369,10 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
         if let engine { quickenStep(adding: (host, engine)) }
     }
 
-    /// One of Chromium's pages came on screen: a tab switched to, a split,
-    /// a small window, or unhidden.
-    func pageInSight() { quickenStep() }
+    /// One of this store's pages came on screen (a tab switched to, a
+    /// split, a small window, unhidden) or committed a new address, which a
+    /// first request counted at a wait already over no longer stands for.
+    func pageChanged() { quickenStep() }
 
     /// A document finished: what its hops set is in the jar by now.
     func pageFinished(_ url: URL?) {
@@ -467,6 +468,8 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     /// its way, whose page has no address yet.
     nonisolated static func shares(chromium: [String], webKit: Set<String>, adding: [(host: String, engine: PageEngineKind)]) -> Bool {
         if adding.contains(where: { $0.engine == .webKit ? chromium.contains($0.host) : webKit.contains($0.host) }) { return true }
+        // Both engines' first requests to one host, neither page there yet.
+        if adding.contains(where: { one in adding.contains { $0.host == one.host && $0.engine != one.engine } }) { return true }
         return chromium.contains(where: webKit.contains)
     }
 
@@ -504,7 +507,7 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     /// Yab back in front: a pass at once, rather than at the end of a slow
     /// wait. A window shown or made key, power saving over: the quicker
     /// pace from now, if the step was waiting out a slower one. A page
-    /// coming on screen within a window says so itself (`pageInSight`).
+    /// coming on screen within a window says so itself (`pageChanged`).
     private static func wakeStepWhenSeen() {
         guard stepWakes.isEmpty else { return }
         Thrift.watch(stepPower) { _ in

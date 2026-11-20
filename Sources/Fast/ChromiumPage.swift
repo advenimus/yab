@@ -1108,6 +1108,7 @@ final class ChromiumPage: YabTextCheckingView, PageHandle, PageAudioControl {
             title = ""
             stateEvents?.page(self, changed: .title(""))
             committedURL = committed; events?.page(self, navigation: .committed(navigation))
+            ChromiumDRMCookies.session(of: tab)?.pageChanged()
             firstPaintMayHaveCome()
         case "page.finished":
             readCertificate()
@@ -1430,7 +1431,7 @@ final class ChromiumPage: YabTextCheckingView, PageHandle, PageAudioControl {
     override func setFrameSize(_ newSize: NSSize) { super.setFrameSize(newSize); updateSurface() }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil { recoverPage(); ChromiumDRMCookies.session(of: tab)?.pageInSight() }
+        if window != nil { recoverPage(); ChromiumDRMCookies.session(of: tab)?.pageChanged() }
         if window == nil { hoverLeft(); receiveTooltip("") }
         updateSurface()
         watchKeyWindow()
@@ -1445,7 +1446,7 @@ final class ChromiumPage: YabTextCheckingView, PageHandle, PageAudioControl {
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); scripts.appearanceChanged() }
     override func viewDidUnhide() {
         super.viewDidUnhide(); OpenTrace.mark("chromium.unhide"); restoreSurfaceAttachment(); syncGeometry(); focusChanged(); pictureSoon()
-        ChromiumDRMCookies.session(of: tab)?.pageInSight()
+        ChromiumDRMCookies.session(of: tab)?.pageChanged()
     }
 
     /// Chrome draws only what is on screen, so ⌃Tab's picture of a page in the
