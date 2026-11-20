@@ -354,14 +354,19 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
             hosts.removeAll { $0 == host }; hosts.insert(host, at: 0)
             framedBy[engine] = Array(hosts.prefix(Self.remembered))
         }
+        // A frame, a redirect's hop or Yab's own request may open a host the
+        // other engine has open, with no page event to say so.
+        if let engine { quickenStep(adding: (host, engine)) }
     }
+
+    /// One of Chromium's pages came on screen: a tab switched to, a split,
+    /// a small window, or unhidden.
+    func pageInSight() { quickenStep() }
 
     /// A document finished: what its hops set is in the jar by now.
     func pageFinished(_ url: URL?) {
         if let url { touched(url) }
         flushSoon(after: 1)
-        // A redirect may have landed on a host the other engine has open.
-        quickenStep()
     }
 
     private func flushSoon(after seconds: TimeInterval) {
@@ -450,19 +455,33 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
 
     /// Whether a host is open on both engines, `adding` a first request on
     /// its way, whose page has no address yet.
-    nonisolated static func shares(chromium: [String], webKit: Set<String>, adding: (host: String, engine: PageEngineKind)?) -> Bool {
-        if let adding, adding.engine == .webKit ? chromium.contains(adding.host) : webKit.contains(adding.host) { return true }
+    nonisolated static func shares(chromium: [String], webKit: Set<String>, adding: [(host: String, engine: PageEngineKind)]) -> Bool {
+        if adding.contains(where: { $0.engine == .webKit ? chromium.contains($0.host) : webKit.contains($0.host) }) { return true }
         return chromium.contains(where: webKit.contains)
     }
 
-    private func stepWait(adding: (host: String, engine: PageEngineKind)?) -> TimeInterval {
+    /// Yab in front, and whether a window can be seen: tests' windows are neither.
+    static var appActive: @MainActor () -> Bool = { NSApp?.isActive == true }
+    static var windowInSight: @MainActor (NSWindow) -> Bool = { $0.occlusionState.contains(.visible) }
+
+    /// Whether someone can see one of these Chromium pages: the tab on a
+    /// stage, either half of a split, a peek, a small window or one of its
+    /// own, in a window in sight. A tab behind another, or in a parked
+    /// space, is in no window: the stage takes it out.
+    static func seen(in browsers: [Browser], holds: (WKWebsiteDataStore) -> Bool) -> Bool {
+        browsers.contains { browser in
+            browser.pagesHeld.contains { tab in
+                guard !tab.gone, holds(tab.pageStore), let page = tab.builtPage as? ChromiumPage, let window = page.window else { return false }
+                return !page.isHiddenOrHasHiddenAncestor && windowInSight(window)
+            }
+        }
+    }
+
+    private func stepWait(adding: [(host: String, engine: PageEngineKind)]) -> TimeInterval {
         let pages = livePages
         let chromium = pages.chromium.union(framedBy[.chromium] ?? []), webKit = pages.webKit.union(framedBy[.webKit] ?? [])
-        let shown = BrowserWindows.shared.browsers.contains { browser in
-            BrowserWindows.shared.window(for: browser)?.occlusionState.contains(.visible) == true
-                && browser.pagesHeld.contains { !$0.gone && $0.builtPage?.engine == .chromium && holds($0.pageStore) }
-        }
-        return Self.stepEvery(shared: Self.shares(chromium: Array(chromium), webKit: webKit, adding: adding), active: NSApp?.isActive == true,
+        let shown = Self.seen(in: BrowserWindows.shared.browsers, holds: holds)
+        return Self.stepEvery(shared: Self.shares(chromium: Array(chromium), webKit: webKit, adding: adding), active: Self.appActive(),
                               shown: shown, saving: Thrift.on || ProcessInfo.processInfo.isLowPowerModeEnabled)
     }
 
@@ -471,9 +490,9 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     private static let stepPower = NSObject()
 
     /// Yab back in front: a pass at once, rather than at the end of a slow
-    /// wait. A Chromium page coming on screen, a window shown or made key,
-    /// power saving over: the quicker pace from now, if the step was
-    /// waiting out a slower one.
+    /// wait. A window shown or made key, power saving over: the quicker
+    /// pace from now, if the step was waiting out a slower one. A page
+    /// coming on screen within a window says so itself (`pageInSight`).
     private static func wakeStepWhenSeen() {
         guard stepWakes.isEmpty else { return }
         Thrift.watch(stepPower) { _ in
@@ -499,10 +518,10 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     }
 
     /// When the step's next pass comes, nil while it isn't waiting.
-    private var stepDue: Date?
-    /// A host's first request on the other engine, its page with no address
-    /// yet: counted as shared at the next wait worked out.
-    private var stepShare: (host: String, engine: PageEngineKind)?
+    private(set) var stepDue: Date?
+    /// Hosts just used on an engine, a first request's or a redirect's page
+    /// with no address yet: counted as shared at the next wait worked out.
+    private var stepShare: [(host: String, engine: PageEngineKind)] = []
     /// Passes so far, kept across restarts: every fifth takes the next hosts in turn.
     private var stepPass = 0
     private var stepLastWait = stepEvery
@@ -525,7 +544,7 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     /// The wait about to start, the host counted as shared now spent on it.
     private func nextStepWait() -> TimeInterval {
         let every = stepWait(adding: stepShare)
-        stepShare = nil
+        stepShare = []
         stepDue = Date().addingTimeInterval(every)
         stepLastWait = every
         return every
@@ -533,7 +552,8 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
 
     /// Restarted only when the quicker wait ends before the one under way;
     /// a wait no longer than the quickest isn't looked at again.
-    private func quickenStep() {
+    private func quickenStep(adding: (host: String, engine: PageEngineKind)? = nil) {
+        if let adding, stepping != nil, !stepShare.contains(where: { $0 == adding }) { stepShare.append(adding) }
         guard let due = stepDue, due.timeIntervalSinceNow > Self.stepEvery,
               Date().addingTimeInterval(stepWait(adding: stepShare)) < due else { return }
         restartStep(now: false)
@@ -541,8 +561,8 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
 
     /// While Chromium has pages, WebKit's jar follows it: the jar is what Yab's
     /// own requests send, and the next WebKit page's frames and requests.
-    private func keepInStep(now: Bool = false, adding: (host: String, engine: PageEngineKind)? = nil) {
-        if let adding { stepShare = adding }
+    func keepInStep(now: Bool = false, adding: (host: String, engine: PageEngineKind)? = nil) {
+        if let adding, !stepShare.contains(where: { $0 == adding }) { stepShare.append(adding) }
         quickenStep()
         guard stepping == nil, automaticSynchronization, !retired else { return }
         Self.wakeStepWhenSeen()
@@ -557,7 +577,7 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
                 guard let self, !self.retired, !Task.isCancelled else { return }
                 self.stepDue = nil
                 let live = self.liveHosts
-                guard !live.chromium.isEmpty else { self.stepping = nil; return }
+                guard !live.chromium.isEmpty else { self.stepping = nil; self.stepShare = []; return }
                 self.stepPass += 1
                 let pass = self.stepPass
                 var hosts = live.chromium.filter(live.webKit.contains)

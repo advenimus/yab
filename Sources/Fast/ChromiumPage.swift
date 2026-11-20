@@ -1430,7 +1430,7 @@ final class ChromiumPage: YabTextCheckingView, PageHandle, PageAudioControl {
     override func setFrameSize(_ newSize: NSSize) { super.setFrameSize(newSize); updateSurface() }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil { recoverPage() }
+        if window != nil { recoverPage(); ChromiumDRMCookies.session(of: tab)?.pageInSight() }
         if window == nil { hoverLeft(); receiveTooltip("") }
         updateSurface()
         watchKeyWindow()
@@ -1443,7 +1443,10 @@ final class ChromiumPage: YabTextCheckingView, PageHandle, PageAudioControl {
     }
     override func viewDidHide() { super.viewDidHide(); hoverLeft(); syncGeometry(); focusChanged() }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); scripts.appearanceChanged() }
-    override func viewDidUnhide() { super.viewDidUnhide(); OpenTrace.mark("chromium.unhide"); restoreSurfaceAttachment(); syncGeometry(); focusChanged(); pictureSoon() }
+    override func viewDidUnhide() {
+        super.viewDidUnhide(); OpenTrace.mark("chromium.unhide"); restoreSurfaceAttachment(); syncGeometry(); focusChanged(); pictureSoon()
+        ChromiumDRMCookies.session(of: tab)?.pageInSight()
+    }
 
     /// Chrome draws only what is on screen, so ⌃Tab's picture of a page in the
     /// back is the one taken here while it was in front.

@@ -385,12 +385,14 @@ struct ChromiumSwitchCookiesTests {
 
     @Test func aHostAboutToOpenOnTheOtherEngineCountsAsShared() {
         typealias Step = ChromiumDRMCookies
-        #expect(!Step.shares(chromium: ["a.test"], webKit: ["b.test"], adding: nil))
-        #expect(Step.shares(chromium: ["a.test"], webKit: ["a.test"], adding: nil))
+        #expect(!Step.shares(chromium: ["a.test"], webKit: ["b.test"], adding: []))
+        #expect(Step.shares(chromium: ["a.test"], webKit: ["a.test"], adding: []))
         // A WebKit tab's first request to a host Chromium has open: its page has no address yet.
-        #expect(Step.shares(chromium: ["a.test"], webKit: [], adding: ("a.test", .webKit)))
-        #expect(Step.shares(chromium: [], webKit: ["a.test"], adding: ("a.test", .chromium)))
-        #expect(!Step.shares(chromium: ["a.test"], webKit: [], adding: ("a.test", .chromium)))
+        #expect(Step.shares(chromium: ["a.test"], webKit: [], adding: [("a.test", .webKit)]))
+        #expect(Step.shares(chromium: [], webKit: ["a.test"], adding: [("a.test", .chromium)]))
+        #expect(!Step.shares(chromium: ["a.test"], webKit: [], adding: [("a.test", .chromium)]))
+        // Several on their way: any one of them shared is enough.
+        #expect(Step.shares(chromium: ["a.test"], webKit: [], adding: [("b.test", .webKit), ("a.test", .webKit)]))
     }
 
     @MainActor @Test func ledgerSavesLandInTheOrderTheyStartAndTheLastIsTheNewest() async throws {
