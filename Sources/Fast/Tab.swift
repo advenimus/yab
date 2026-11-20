@@ -2643,7 +2643,7 @@ final class Tab: ObservableObject, Identifiable, Relaying {
     /// Whether the page is dark under that box (`DropFrame.ground`).
     @ObservationIgnored var fieldDark: Bool?
     /// The box asks for a code a site sent, not for an account.
-    struct WaitingCode {
+    struct WaitingCode: Equatable {
         let document: String
         let field: String
         let request: CodeRequest
@@ -2653,8 +2653,9 @@ final class Tab: ObservableObject, Identifiable, Relaying {
         didSet { if Self.codeBoxMoves(from: oldValue, to: waitingCode) { MailCodeState.boxMoved() } }
     }
 
-    /// Nil to nil, which Forms sets on every field message, moves nothing.
-    nonisolated static func codeBoxMoves(from old: WaitingCode?, to new: WaitingCode?) -> Bool { old != nil || new != nil }
+    /// The same box, or none, set again, which Forms does on every field
+    /// message, moves nothing.
+    nonisolated static func codeBoxMoves(from old: WaitingCode?, to new: WaitingCode?) -> Bool { old != new }
     @ObservationIgnored var fieldCode = false
     @ObservationIgnored var fieldCodeRequest = CodeRequest()
     /// Where that box last was, in points, for a list that comes up later

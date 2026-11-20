@@ -84,6 +84,10 @@ struct MailCodeTimerTests {
         #expect(!Tab.codeBoxMoves(from: nil, to: nil))
         #expect(Tab.codeBoxMoves(from: nil, to: box))
         #expect(Tab.codeBoxMoves(from: box, to: nil))
+        // Forms sets the same box again on every field message: nothing moved.
+        #expect(!Tab.codeBoxMoves(from: box, to: box))
+        let elsewhere = Tab.WaitingCode(document: "d", field: "g", request: CodeRequest(), address: URL(string: "https://bank.test/")!)
+        #expect(Tab.codeBoxMoves(from: box, to: elsewhere))
     }
 
     /// A turn of the main loop, for what is told on the next one.
