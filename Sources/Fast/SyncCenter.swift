@@ -1192,7 +1192,7 @@ final class SyncCenter: ObservableObject {
         if let projects = read.projects { try journal.reconcile(SyncShapes.project, SyncShapes.projects(projects)) }
         if let visits = read.visits {
             do {
-                try SyncShapes.reconcileVisits(journal, SyncShapes.visits(visits), cuts: read.cuts)
+                try SyncShapes.tellVisits(visits, cuts: read.cuts, into: journal)
             } catch {
                 // Deleted by hand and not told: told with the next flush.
                 let cuts = read.cuts

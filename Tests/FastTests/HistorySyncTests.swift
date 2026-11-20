@@ -140,7 +140,7 @@ struct HistorySyncTests {
 
     /// What SyncCenter's flush does with Mac A's history and its cuts.
     static func flush(_ history: History, into journal: Journal) throws {
-        try SyncShapes.reconcileVisits(journal, SyncShapes.visits(history.visits(since: .distantPast)), cuts: history.takeCuts())
+        try SyncShapes.tellVisits(history.visits(since: .distantPast), cuts: history.takeCuts(), into: journal)
     }
 
     @Test func aPageDeletedOnOneMacGoesFromTheOtherAndDoesNotComeBack() throws {
