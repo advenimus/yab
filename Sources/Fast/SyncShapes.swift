@@ -60,7 +60,9 @@ enum SyncShapes {
         var out: Collection = [:]
         for (key, at) in cuts where now[key] == nil {
             guard let record = journal.record(.init(collection: visit, id: key)) else { continue }
-            var fields = record.visible
+            // A removed one keeps what it said, so it is never up without
+            // its address between the mark and the removal.
+            var fields = record.alive() ? record.visible : record.fields.filter { !$0.value.isNull }
             fields["cut"] = .number(at.timeIntervalSince1970.rounded(.down))
             out[key] = fields
         }
@@ -74,10 +76,18 @@ enum SyncShapes {
     /// differs from the record. Two Macs that last searched different
     /// things under one key (google.com/search) each sent theirs back on
     /// every flush, forever.
+    /// A place another Mac removed without deleting it (it left the two
+    /// weeks there, or history sync was turned off there) is still this
+    /// Mac's, and goes up again whole. One deleted by hand stays gone unless
+    /// this Mac has been there since, as History.dropSynced keeps it.
     static func reconcileVisits(_ journal: Journal, _ now: Collection, cuts: [String: Date]) throws {
+        let revive: (SyncKit.Record, [String: Value]) -> Bool = { record, fields in
+            guard let cut = cutVisits(from: [record]).first else { return true }
+            return (fields["last"]?.number ?? 0) > cut.at.timeIntervalSince1970 + 1
+        }
         let cut = cut(cuts, in: journal, keeping: now)
-        if !cut.isEmpty { try journal.reconcile(visit, now.merging(cut) { mine, _ in mine }, shown: true) }
-        try journal.reconcile(visit, now, shown: true)
+        if !cut.isEmpty { try journal.reconcile(visit, now.merging(cut) { mine, _ in mine }, shown: true, revive: revive) }
+        try journal.reconcile(visit, now, shown: true, revive: revive)
     }
 
     /// Places deleted by hand on another device, by key and when: a removed

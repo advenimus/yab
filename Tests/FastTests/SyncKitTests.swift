@@ -333,6 +333,15 @@ struct SyncKitTests {
         try a.reconcile("test.mark", [:])
         let told = try b.receive(a.pending().map { ($0.record, 3) })
         #expect(told.map(\.id) == ["1"] && told.first?.alive() == false && told.first?.fields["cut"] == 5)
+        // A change from before the removal, arriving late: nothing for it either.
+        let c = try Journal(path: nil, device: "c")
+        _ = try c.receive(b.all("test.mark").map { ($0, 3) })
+        var late = try #require(c.all("test.mark").first)
+        let was = try #require(late.stamps["title"])
+        late.fields["title"] = "Older"
+        late.stamps["title"] = Stamp(wall: was.wall, count: was.count, device: "d")
+        #expect(try #require(late.stamps["title"]) < (try #require(late.deleted)))
+        #expect(try c.receive([(late, 4)]).isEmpty)
         // Emptied after its removal: nothing for the mirror.
         #expect(try a.blankRemoved("test.mark") == 1)
         #expect(try b.receive(a.pending().map { ($0.record, 4) }).isEmpty)

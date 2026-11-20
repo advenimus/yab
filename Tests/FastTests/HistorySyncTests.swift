@@ -96,6 +96,12 @@ struct HistorySyncTests {
         #expect(untitled.url == newer.absoluteString)
         #expect(untitled.title == "b - Google Search")
         #expect(untitled.last == Date(timeIntervalSince1970: 3_000))
+        // An older visit's title doesn't go on a newer, untitled address.
+        let blank = Visit(url: "https://www.google.com/search?q=e", key: "google.com/search", title: "", count: 1,
+                          last: Date(timeIntervalSince1970: 5_000), typed: nil)
+        let other = History([blank])
+        other.adoptSynced([(newer, "b - Google Search", Date(timeIntervalSince1970: 4_000), false)])
+        #expect(other.visits(since: .distantPast).first?.title == "")
     }
 
     @Test func aNewRemotePlaceIsOneVisitEvenAfterRepeatedReceives() throws {
@@ -178,31 +184,49 @@ struct HistorySyncTests {
     }
 
     /// Three Macs holding the same two places; Mac A then turns history
-    /// sync off, which takes them out of the account. B and C keep theirs.
-    static func threeMacsAfterOneStopped() throws -> (b: History, macB: Journal, c: History, macC: Journal) {
-        let (a, macA, b, macB) = try twoMacs()
-        _ = a
+    /// sync off, which takes them out of the account. B and C have taken
+    /// the removal in and kept theirs, and haven't flushed since.
+    static func threeMacsAfterOneStopped() throws -> (a: Journal, b: History, macB: Journal, c: History, macC: Journal) {
+        let (_, macA, b, macB) = try twoMacs()
         let c = History([gone, kept])
         let macC = try Journal(path: nil, device: "history-c")
         _ = try macC.receive(macA.all(SyncShapes.visit).map { ($0, Int64(1)) })
         try flush(c, into: macC)
         try SyncShapes.reconcileVisits(macA, [:], cuts: [:])
         let removal = macA.pending().map { ($0.record, Int64(3)) }
+        try macA.sent(removal)
         for (history, journal) in [(b, macB), (c, macC)] {
             let received = try journal.receive(removal)
             history.adoptSynced(SyncShapes.visits(from: received))
             history.dropSynced(SyncShapes.cutVisits(from: received))
-            try flush(history, into: journal)
-            #expect(journal.pendingCount == 0)
             #expect(history.visits(since: .distantPast).count == 2)
         }
-        return (b, macB, c, macC)
+        return (macA, b, macB, c, macC)
+    }
+
+    @Test func placesAMacStoppedSyncingComeBackWholeFromTheOthersOnce() throws {
+        let (macA, b, macB, c, macC) = try Self.threeMacsAfterOneStopped()
+        try Self.flush(b, into: macB)
+        let back = macB.pending().map { ($0.record, Int64(4)) }
+        #expect(back.count == 2)
+        for (record, _) in back {
+            let visit = try #require(SyncVisit(record))
+            #expect([Self.gone.url, Self.kept.url].contains(visit.url))
+        }
+        try macB.sent(back)
+        _ = try macC.receive(back)
+        _ = try macA.receive(back)
+        // C says the same, and A, with history sync off, removes nothing more.
+        try Self.flush(c, into: macC)
+        try SyncShapes.reconcileVisits(macA, [:], cuts: [:])
+        #expect(macC.pendingCount == 0 && macA.pendingCount == 0)
+        try Self.flush(b, into: macB)
+        #expect(macB.pendingCount == 0)
     }
 
     @Test func aPlaceVisitedAgainAfterAnotherMacStoppedGoesUpWhole() throws {
-        let (b, macB, _, _) = try Self.threeMacsAfterOneStopped()
-        let url = URL(string: Self.kept.url)!
-        b.record(url, title: Self.kept.title)
+        let (_, b, macB, _, _) = try Self.threeMacsAfterOneStopped()
+        b.record(URL(string: Self.kept.url)!, title: Self.kept.title)
         try Self.flush(b, into: macB)
         let record = try #require(macB.record(.init(collection: SyncShapes.visit, id: Self.kept.key)))
         #expect(record.alive())
@@ -211,14 +235,24 @@ struct HistorySyncTests {
         #expect(visit.title == Self.kept.title)
     }
 
-    @Test func aPageDeletedAfterAnotherMacStoppedStillGoesFromTheThird() throws {
-        let (b, macB, c, macC) = try Self.threeMacsAfterOneStopped()
+    @Test func aPageDeletedRightAfterAnotherMacStoppedStillGoesFromTheThird() throws {
+        let (_, b, macB, c, macC) = try Self.threeMacsAfterOneStopped()
         b.forget(Self.gone.key)
         try Self.flush(b, into: macB)
+        let gone = try #require(macB.record(.init(collection: SyncShapes.visit, id: Self.gone.key)))
+        #expect(!gone.alive() && gone.fields["url"]?.string == Self.gone.url)
         let received = try macC.receive(macB.pending().map { ($0.record, Int64(4)) })
         let dropped = c.dropSynced(SyncShapes.cutVisits(from: received))
         #expect(dropped.map(\.absoluteString) == [Self.gone.url])
         #expect(c.visits(since: .distantPast).map(\.key) == [Self.kept.key])
+    }
+
+    @Test func aDeletionAFlushCouldNotTellWaitsForTheNext() {
+        let history = History([Self.gone, Self.kept])
+        history.forget(Self.gone.key)
+        let untold = history.takeCuts()
+        history.keepCuts(untold)
+        #expect(history.takeCuts() == untold)
     }
 
     @Test func aPageVisitedAgainSinceTheDeleteStays() throws {

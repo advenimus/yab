@@ -225,8 +225,7 @@ enum SyncWallet {
                     || listed?.used.map({ $0.timeIntervalSince1970.rounded(.down) }) != used?.timeIntervalSince1970
                     || (tagged != nil && listed?.space != tagged)
                     || Vault.password(host: host, user: user) != password {
-                    Vault.save(host: host, user: user, password: password, used: used, clear: clear, space: tagged, from: record.latest?.wall)
-                    wrote = true
+                    if Vault.save(host: host, user: user, password: password, used: used, clear: clear, space: tagged, from: record.latest?.wall) { wrote = true }
                 }
             case code:
                 let names = record.id.components(separatedBy: "\u{1}")
@@ -237,8 +236,7 @@ enum SyncWallet {
                 }
                 guard let text = record["secret"]?.string.flatMap({ seal.reveal($0, in: key) }).flatMap({ String(data: $0, encoding: .utf8) }),
                       text != OneTime.text(host: names[0], user: names[1]) else { continue }
-                OneTime.save(text, host: names[0], user: names[1], from: record.latest?.wall)
-                wrote = true
+                if OneTime.save(text, host: names[0], user: names[1], from: record.latest?.wall) { wrote = true }
             case card, address:
                 if record.collection == address, !ContextPrivacy.shared.current(contextEpoch) { continue }
                 let isCard = record.collection == card

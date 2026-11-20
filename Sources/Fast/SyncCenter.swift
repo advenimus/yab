@@ -1113,6 +1113,8 @@ final class SyncCenter: ObservableObject {
             if let failed { NSLog("sync: %@", String(describing: failed)) }
             DispatchQueue.main.async { [weak self] in
                 defer { done?() }
+                // Deleted by hand and not told: told with the next flush.
+                if failed != nil, !read.cuts.isEmpty { History.shared.keepCuts(read.cuts) }
                 guard let self, self.journal === journal, !self.leaving else { after?(false); return }
                 self.flushed(collections, journal: journal, failed: failed != nil)
                 after?(failed == nil)

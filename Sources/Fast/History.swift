@@ -989,7 +989,10 @@ final class History: ObservableObject {
             guard !key.isEmpty, place.url.scheme == "http" || place.url.scheme == "https" else { continue }
             if var seen = all[key] {
                 let newer = place.last > seen.last
-                let takeTitle = !place.title.isEmpty && (newer || seen.title.isEmpty) && place.title != seen.title
+                // A title only with its own address: an older visit's says
+                // nothing of the page this one is.
+                let takeTitle = !place.title.isEmpty && place.title != seen.title
+                    && (newer || (seen.title.isEmpty && seen.url == place.url.absoluteString))
                 let takeTyped = place.typed && (seen.typed ?? 0) < 1
                 guard newer || takeTitle || takeTyped else { continue }
                 seen.last = max(seen.last, place.last)
@@ -1037,6 +1040,12 @@ final class History: ObservableObject {
     func takeCuts() -> [String: Date] {
         defer { cuts = [:] }
         return cuts
+    }
+
+    /// Deletions a flush took but couldn't tell, for the next one. A newer
+    /// deletion of the same place since stays.
+    func keepCuts(_ untold: [String: Date]) {
+        cuts.merge(untold) { now, _ in now }
     }
 
     /// Every place last been to since a moment.
