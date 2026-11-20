@@ -1,3 +1,13 @@
+--- a/cef/BUILD.gn
++++ b/cef/BUILD.gn
+@@ -994,6 +994,7 @@ source_set("libcef_static") {
+     "//components/url_formatter",
+     "//components/user_prefs",
+     "//components/version_info",
++    "//components/viz/host",
+     "//components/viz/service",
+     "//components/web_cache/renderer",
+     "//components/webauthn/json",
 --- a/cef/include/cef_browser.h
 +++ b/cef/include/cef_browser.h
 @@ -73,6 +73,7 @@
@@ -98,8 +108,8 @@
 +    paced.roots.erase(compositor->frame_sink_id());
 +  }
 +  std::vector<viz::FrameSinkId> ids;
-+  for (const auto& [id, owner] : paced.roots) {
-+    ids.push_back(id);
++  for (const auto& root : paced.roots) {
++    ids.push_back(root.first);
 +  }
 +  manager->Throttle(ids, paced.interval);
 +  return true;
