@@ -319,7 +319,8 @@ struct TabEngineTests {
         #expect(page.window == nil && !page.restsFrames)
     }
 
-    @Test func aPageAnAgentOpenedDrawsFullyUntilNoCallIsInFlight() {
+    @Test func aPageAnAgentOpenedDrawsFullyUntilNoCallIsInFlight() throws {
+        try #require(Bench.shared.callsInFlight == 0, "a bench call of another test is still waiting for its answer")
         let factory = Factory()
         let tab = Tab(bench: true, engine: .chromium, factory: factory.factory)
         defer { Bench.shared.rest(tab); tab.close() }

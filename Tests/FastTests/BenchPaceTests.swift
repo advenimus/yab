@@ -71,6 +71,29 @@ struct BenchPaceTests {
         #expect(!pace.awake(page))
     }
 
+    @Test func aHelperWithoutThePatchIsSentNothing() {
+        let helper = UUID()
+        for interval in [0, ChromiumPage.restingInterval] {
+            #expect(ChromiumFrames.next(interval: interval, capable: false, remote: "tab-1", helper: helper, sent: nil) == nil)
+        }
+    }
+
+    @Test func aPageIsToldOnlyWhatChanges() {
+        let helper = UUID(), slow = ChromiumPage.restingInterval
+        #expect(ChromiumFrames.next(interval: 0, capable: true, remote: "tab-1", helper: helper, sent: nil) == nil,
+                "a new page draws at the display's rate already")
+        let rested = ChromiumFrames.next(interval: slow, capable: true, remote: "tab-1", helper: helper, sent: nil)
+        #expect(rested?.interval == slow)
+        #expect(ChromiumFrames.next(interval: slow, capable: true, remote: "tab-1", helper: helper, sent: rested) == nil)
+        #expect(ChromiumFrames.next(interval: 0, capable: true, remote: "tab-1", helper: helper, sent: rested)?.interval == 0)
+    }
+
+    @Test func aRestartedHelpersPageWithTheSameNameIsToldAgain() {
+        let slow = ChromiumPage.restingInterval
+        let old = ChromiumFrames.Sent(remote: "tab-1", helper: UUID(), interval: slow)
+        #expect(ChromiumFrames.next(interval: slow, capable: true, remote: "tab-1", helper: UUID(), sent: old)?.interval == slow)
+    }
+
     @Test func onlyARestingPageInTheRoomIsPaced() {
         #expect(ChromiumPage.frameInterval(resting: true, inRoom: true) == ChromiumPage.restingInterval)
         #expect(ChromiumPage.frameInterval(resting: true, inRoom: false) == 0)

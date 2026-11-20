@@ -1,12 +1,22 @@
 import AppKit
 import YabCoreClient
 
-/// What a page in the bench's room was last told to draw at.
+/// What a page in the bench's room was last told to draw at, by which
+/// helper: a helper started again names its tabs from tab-1 again.
 @MainActor
 final class ChromiumFrames {
+    struct Sent: Equatable { let remote: String; let helper: UUID; let interval: Int }
     var resting = false
-    var sent: (remote: String, interval: Int)?
-    var sending: Task<Void, Never>?
+    var sent: Sent?
+
+    /// What to send now, or nothing. A helper without CEF 0137 is never sent
+    /// anything, and a page it has just made draws at the display's rate.
+    nonisolated static func next(interval: Int, capable: Bool, remote: String, helper: UUID, sent: Sent?) -> Sent? {
+        guard capable else { return nil }
+        let before = sent.flatMap { $0.remote == remote && $0.helper == helper ? $0 : nil }
+        guard interval != before?.interval ?? 0 else { return nil }
+        return Sent(remote: remote, helper: helper, interval: interval)
+    }
 }
 
 /// An agent's page in the bench's room, between its agent's calls, draws at
@@ -34,24 +44,23 @@ extension ChromiumPage: PageFramePace {
     }
 
     /// A new page in the helper draws at the display's rate until told
-    /// otherwise; one told nothing yet is told only to slow down.
+    /// otherwise; one told nothing yet is told only to slow down. A request
+    /// that fails leaves what was sent before, and the next change of call,
+    /// stage or room sends again.
     func paceFrames() {
-        guard let remote = remoteID, !retired, ChromiumProcess.shared.pacesFrames,
-              let core = ChromiumProcess.shared.connectedClient else { return }
+        guard let remote = remoteID, !retired, ChromiumProcess.shared.connectedClient != nil else { return }
         let interval = Self.frameInterval(resting: frames.resting, inRoom: window?.identifier == Bench.roomID)
-        let before = frames.sent?.remote == remote ? frames.sent : nil
-        guard interval != before?.interval ?? 0 else { return }
-        frames.sent = (remote, interval)
-        // In order: a slow-down sent after the wake-up would keep a working page slow.
-        let previous = frames.sending
-        frames.sending = Task { @MainActor [weak self] in
-            await previous?.value
-            guard ChromiumProcess.shared.isCurrent(core) else { return }
+        guard let sent = ChromiumFrames.next(interval: interval, capable: ChromiumProcess.shared.pacesFrames, remote: remote,
+                                             helper: ChromiumProcess.shared.connectionGeneration, sent: frames.sent) else { return }
+        let before = frames.sent
+        frames.sent = sent
+        queueFrames { [weak self] core, id in
+            guard id == remote else { return }
             do {
-                _ = try await core.request("tab.frames", params: ["tab": .string(remote), "interval": .number(Double(interval))])
+                _ = try await core.request("tab.frames", params: ["tab": .string(id), "interval": .number(Double(interval))])
             } catch {
                 DebugLog.note("chromium.frames", ["error": error.localizedDescription, "interval": interval])
-                if let self, self.frames.sent?.remote == remote, self.frames.sent?.interval == interval { self.frames.sent = before }
+                if let self, self.frames.sent == sent { self.frames.sent = before }
             }
         }
     }

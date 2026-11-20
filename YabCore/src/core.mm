@@ -2448,8 +2448,9 @@ static void Request(NSDictionary* request) {
   } else if ([method isEqual:@"tab.frames"]) {
     // A page no one sees, between an agent's calls: drawn at a slower rate
     // and still visible (CEF 0137). The stock SDK has no way to.
-    int interval = (int)[p[@"interval"] doubleValue];
-    if (interval < 0 || interval > 1000) { Reply(id, nil, @"interval must be 0 to 1000 ms"); return; }
+    double asked = [p[@"interval"] doubleValue];
+    if (!(asked >= 0 && asked <= 1000)) { Reply(id, nil, @"interval must be 0 to 1000 ms"); return; }
+    int interval = (int)lround(asked);
 #if YABCORE_FRAME_INTERVAL
     if (!b->GetHost()->SetFrameInterval(interval)) { Reply(id, nil, @"The page has no compositor to pace"); return; }
     Reply(id, @{@"interval": @(interval)});

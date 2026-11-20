@@ -10088,6 +10088,7 @@ final class Bench {
     private var pace = BenchPace()
 
     func callBegan() { pace.began() }
+    var callsInFlight: Int { pace.calls }
 
     func callNames(_ tab: Tab) -> ObjectIdentifier {
         let page = ObjectIdentifier(tab)
