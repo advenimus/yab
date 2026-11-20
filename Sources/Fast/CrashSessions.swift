@@ -38,7 +38,10 @@ final class CrashSessionLedger: @unchecked Sendable {
 
     let folder: URL
     private let queue = DispatchQueue(label: "yab.crash-session", qos: .utility)
+    /// The run as last looked at, which a pressure notice or a death writes.
     private var current: Run?
+    /// The run as the marker has it, which a look is measured against.
+    private var written: Run?
     var marker: URL { folder.appendingPathComponent("active.json") }
     var pendingFolder: URL { folder.appendingPathComponent("pending", isDirectory: true) }
 
@@ -54,7 +57,7 @@ final class CrashSessionLedger: @unchecked Sendable {
                 try write(old, to: pendingFolder.appendingPathComponent(old.id.uuidString + ".json"))
             }
             try write(run, to: marker)
-            current = run
+            current = run; written = run
         }
     }
 
@@ -64,7 +67,7 @@ final class CrashSessionLedger: @unchecked Sendable {
             change(&run)
             do {
                 try write(run, to: marker)
-                current = run
+                current = run; written = run
             } catch { NSLog("Crashes: session observation could not be saved: %@", String(describing: error)) }
         }
     }
@@ -75,19 +78,20 @@ final class CrashSessionLedger: @unchecked Sendable {
     /// CrashExitLogs.unwritten allows for.
     static let beat: TimeInterval = 45
 
-    /// The heartbeat: written when the run reads differently, or when what
-    /// the marker says was last observed is a beat old. Every observation
-    /// rewrote the file, four times a minute all day, with the same numbers.
+    /// The heartbeat: written when the run reads differently from the marker,
+    /// or when what the marker says was last observed is a beat old. Every
+    /// observation rewrote the file, four times a minute all day, with the
+    /// same numbers. Kept as the latest look either way.
     func observe(at: Date, _ change: @escaping @Sendable (inout Run) -> Void) {
         queue.async { [self] in
-            guard let was = current else { return }
-            var run = was
+            guard var run = current, let was = written else { return }
             change(&run)
             run.observed = at
+            current = run
             guard at.timeIntervalSince(was.observed) >= Self.beat || !Self.same(run, was) else { return }
             do {
                 try write(run, to: marker)
-                current = run
+                written = run
             } catch { NSLog("Crashes: session observation could not be saved: %@", String(describing: error)) }
         }
     }
@@ -111,7 +115,7 @@ final class CrashSessionLedger: @unchecked Sendable {
             if FileManager.default.fileExists(atPath: marker.path) {
                 try FileManager.default.removeItem(at: marker)
             }
-            current = nil
+            current = nil; written = nil
         }
     }
 

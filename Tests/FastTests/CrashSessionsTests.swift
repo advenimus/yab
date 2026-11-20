@@ -247,6 +247,29 @@ final class CrashSessionsTests: XCTestCase {
         try ledger.finish()
     }
 
+    func testAWriteBetweenBeatsCarriesTheLatestLook() throws {
+        let (folder, ledger) = try fixture()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let run = makeRun()
+        try ledger.begin(run)
+        let start = run.observed
+        ledger.observe(at: start.addingTimeInterval(15)) { $0.uptime += 15; $0.memoryBytes = 300 << 20 }
+        XCTAssertEqual(try marked(ledger).observed, start)
+        // A pressure notice or a helper's death writes the run as last looked
+        // at, not as last written: a jetsam report shows the memory at the end.
+        ledger.update { $0.memoryPressure = "critical" }
+        let pressed = try marked(ledger)
+        XCTAssertEqual(pressed.memoryBytes, 300 << 20)
+        XCTAssertEqual(pressed.observed, start.addingTimeInterval(15))
+        XCTAssertEqual(pressed.memoryPressure, "critical")
+        // A slow climb is still measured from what was written.
+        ledger.observe(at: start.addingTimeInterval(30)) { $0.memoryBytes = 700 << 20 }
+        XCTAssertEqual(try marked(ledger).observed, start.addingTimeInterval(15))
+        ledger.observe(at: start.addingTimeInterval(40)) { $0.memoryBytes = 900 << 20 }
+        XCTAssertEqual(try marked(ledger).memoryBytes, 900 << 20)
+        try ledger.finish()
+    }
+
     func testAMemoryClimbIsWrittenAtOnce() {
         var run = makeRun(), climbed = run
         run.memoryBytes = 3 << 30
