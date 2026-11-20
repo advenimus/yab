@@ -69,10 +69,10 @@ final class CrashSessionLedger: @unchecked Sendable {
         }
     }
 
-    /// How old the marker's observation may grow while nothing else in the
-    /// run changes: the exit is looked for up to two minutes after it
-    /// (CrashExitLogs.read). Under the slowest look's minute, so a look a
-    /// moment early still writes.
+    /// How old the marker's observation may grow before a look writes it
+    /// whatever. Under the slowest look's minute, so a look a moment early
+    /// still writes; a look just short of it skips, which
+    /// CrashExitLogs.unwritten allows for.
     static let beat: TimeInterval = 45
 
     /// The heartbeat: written when the run reads differently, or when what
@@ -226,15 +226,25 @@ enum CrashExitLogs {
         }
     }
 
-    /// How long after the marker's last observation the exit is looked for:
-    /// two minutes after the last look, which the marker may be a beat behind.
-    static let afterObservation: TimeInterval = 120 + CrashSessionLedger.beat
+    /// The longest the marker goes unwritten while the main thread runs: a
+    /// look just short of a beat skips writing, and Yab going behind can put
+    /// the next one the slowest look later.
+    static let unwritten = CrashSessionLedger.beat + CrashSessions.behind
+
+    /// How long a hang may last before the exit and still be looked at, as
+    /// when every 15 s look wrote and the exit was looked for 120 s after it.
+    static let hang: TimeInterval = 120 - 15
+
+    static let afterObservation = unwritten + hang
+
+    /// The heartbeat bounds the unknown exit to shortly after the last
+    /// observation. This is explicitly an observation window, not exit time.
+    static func window(_ run: CrashSessionLedger.Run, now: Date) -> (from: Date, through: Date) {
+        (run.observed.addingTimeInterval(-180), min(now, run.observed.addingTimeInterval(afterObservation)))
+    }
 
     static func read(_ run: CrashSessionLedger.Run, now: Date = Date()) -> Result {
-        // The heartbeat bounds the unknown exit to shortly after the last
-        // observation. This is explicitly an observation window, not exit time.
-        let from = run.observed.addingTimeInterval(-180)
-        let through = min(now, run.observed.addingTimeInterval(afterObservation))
+        let (from, through) = window(run, now: now)
         do {
             let store = try OSLogStore(scope: .system)
             let predicate = NSPredicate(format: "date >= %@ AND date <= %@ AND (processIdentifier IN %@ OR process IN %@)",
@@ -284,10 +294,12 @@ enum CrashSessions {
     private static var began: TimeInterval = 0
     private static var watches: [NSObjectProtocol] = []
 
+    nonisolated static let inFront: TimeInterval = 15
+    nonisolated static let behind: TimeInterval = 60
+
     /// How often the run is looked at: every 15 seconds while Yab is in
-    /// front, every minute behind other apps. Both well inside the two
-    /// minutes after the last observation the exit is looked for in.
-    static func every(active: Bool) -> TimeInterval { active ? 15 : 60 }
+    /// front, every minute behind other apps.
+    static func every(active: Bool) -> TimeInterval { active ? inFront : behind }
 
     /// The next look, one at a time. Yab coming forward only brings it
     /// sooner: switching apps back and forth never puts it off.

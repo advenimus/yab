@@ -222,17 +222,29 @@ final class CrashSessionsTests: XCTestCase {
     @MainActor func testTheRunIsLookedAtLessWhileYabIsBehind() {
         XCTAssertEqual(CrashSessions.every(active: true), 15)
         XCTAssertEqual(CrashSessions.every(active: false), 60)
-        // Both inside the two minutes after an observation the exit is looked for in.
-        XCTAssertLessThan(CrashSessions.every(active: false), 120)
         // A slow look a moment early still writes.
         XCTAssertLessThan(CrashSessionLedger.beat, CrashSessions.every(active: false))
     }
 
-    @MainActor func testTheExitIsLookedForAsLongAfterTheLastLookAsBefore() {
-        // Before, the marker was at most one 15 s look old and the exit was
-        // looked for 120 s after it. The marker may now be a beat and a look old.
-        let oldest = CrashSessionLedger.beat + CrashSessions.every(active: true)
-        XCTAssertGreaterThanOrEqual(CrashExitLogs.afterObservation - oldest, 120 - 15)
+    @MainActor func testAnExitAfterASkippedLookThenASlowOneIsStillLookedFor() throws {
+        let (folder, ledger) = try fixture()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let run = makeRun()
+        try ledger.begin(run)
+        let start = run.observed
+        // Yab coming forward brought a look to just short of a beat: it skips writing.
+        let skipped = start.addingTimeInterval(CrashSessionLedger.beat - 1)
+        ledger.observe(at: skipped) { _ in }
+        XCTAssertEqual(try marked(ledger).observed, start)
+        // Switched away before it fired, so the next look is the slowest one
+        // later, and the main thread hangs a moment before it.
+        let hang = skipped.addingTimeInterval(CrashSessions.every(active: false) - 1)
+        // The person waits as long as before (one 15 s look, the exit looked
+        // for 120 s after it) before force-quitting.
+        let exit = hang.addingTimeInterval(120 - 15)
+        let through = CrashExitLogs.window(try marked(ledger), now: exit.addingTimeInterval(3600)).through
+        XCTAssertGreaterThanOrEqual(through, exit)
+        try ledger.finish()
     }
 
     func testAMemoryClimbIsWrittenAtOnce() {
