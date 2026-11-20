@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SQLite3
 import Testing
 @testable import SyncKit
 
@@ -298,6 +299,36 @@ struct SyncKitTests {
         let again = try Journal(path: path, device: "a")
         #expect(again.clock.latest == stamp && again.cursor == 42)
         #expect(again.record(Record.Key(collection: "test.mark", id: "1"))?["title"] == "T")
+    }
+
+    @Test func aReconcileThatChangesNothingWritesNothing() throws {
+        kinds()
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("sync-\(UUID()).sqlite").path
+        defer { for end in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + end) } }
+        let journal = try Journal(path: path, device: "a")
+        try journal.reconcile("test.mark", ["1": ["title": "One"]])
+        try journal.reconcile("test.mark", ["1": ["title": "One"]], shown: true)
+        // A second connection sees the file's data version move only when
+        // another one commits a change to it.
+        var other: OpaquePointer?
+        #expect(sqlite3_open(path, &other) == SQLITE_OK)
+        defer { sqlite3_close(other) }
+        func version() -> Int64 {
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            guard sqlite3_prepare_v2(other, "PRAGMA data_version", -1, &statement, nil) == SQLITE_OK,
+                  sqlite3_step(statement) == SQLITE_ROW else { return -1 }
+            return sqlite3_column_int64(statement, 0)
+        }
+        func wal() -> Int { ((try? FileManager.default.attributesOfItem(atPath: path + "-wal"))?[.size] as? Int) ?? -1 }
+        let before = version(), written = wal()
+        #expect(try journal.reconcile("test.mark", ["1": ["title": "One"]]).isEmpty)
+        #expect(try journal.reconcile("test.mark", ["1": ["title": "One"]], shown: true).isEmpty)
+        #expect(version() == before)
+        #expect(wal() == written)
+        try journal.reconcile("test.mark", ["1": ["title": "Two"]])
+        #expect(version() != before)
+        #expect(wal() > written)
     }
 
     // MARK: Convergence

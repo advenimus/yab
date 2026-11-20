@@ -209,7 +209,9 @@ public final class Journal: @unchecked Sendable {
                     }
                     if !started { setMeta(startedKey, "1") }
                 }
-                persistClock()
+                // The clock moves only with a change: a reconcile that
+                // changed nothing writes nothing.
+                if !changed.isEmpty { persistClock() }
             }
             return changed.sorted()
         }
@@ -767,6 +769,7 @@ public final class Journal: @unchecked Sendable {
     public func receive(_ incoming: [(record: Record, version: Int64)]) throws -> [Record] {
         try queue.sync {
             var changed: [Record] = []
+            let was = clock.latest
             try transaction {
                 for (theirs, version) in incoming {
                     for stamp in theirs.stamps.values { clock.observe(stamp) }
@@ -784,7 +787,7 @@ public final class Journal: @unchecked Sendable {
                         changed.append(merged)
                     }
                 }
-                persistClock()
+                if clock.latest != was { persistClock() }
             }
             return changed
         }
