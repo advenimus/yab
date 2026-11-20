@@ -481,8 +481,8 @@ final class Shield {
         attempt.convert = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
         attempt.rules = rules.count - parts.left
         attempt.skipped = rules.skipped + parts.left
-        // Even with no ##+js, the table carries the click guard (shield-guard.js) to pages.
-        attempt.table = rules.scriptlets.table()
+        // No ##+js names no site: no page gets the script, nor the click guard in it.
+        attempt.table = rules.scriptlets.isEmpty ? nil : rules.scriptlets.table()
         var lists: [WKContentRuleList] = []
         for (index, part) in parts.parts.enumerated() {
             let list = autoreleasepool { part.json }

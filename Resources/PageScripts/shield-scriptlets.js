@@ -131,7 +131,10 @@
         if (!host) return;
         var picked = pick(hosts, candidates(host));
         if (!picked.length || !allowed(host)) return;
-        start(decode(calls, picked));
+        try { start(decode(calls, picked)); } catch (e) {}
+        // The click guard (shield-guard.js) only where the lists name the
+        // page's own site: a table naming others leaves it as it was.
+        if (window === window.top) guardClicks(host);
     } catch (e) {}
 
     // MARK: - the scriptlets, set up only in a frame that runs some
@@ -777,4 +780,8 @@
             try { SCRIPTLETS[name](calls[i].slice(1)); } catch (e) {}
         }
     }
+
+    // MARK: - the click guard, put in here when served (shield-guard.js)
+
+    __YAB_GUARD__
 })();

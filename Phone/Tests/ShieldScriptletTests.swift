@@ -29,7 +29,6 @@ final class ShieldScriptletTests: XCTestCase {
             "/t1": .page(try Self.fixture("t1-inline-aclib")),
             "/t4": .page(try Self.fixture("t4-iframe-open")),
             "/t7": .page(try Self.fixture("t7-link-cover")),
-            "/t8": .page(try Self.fixture("t8-cover-guard")),
             "/ad-landing.html": .page(try Self.fixture("ad-landing")),
             "/plain": .page(Self.plain),
             "/hop": .redirect(host: "127.0.0.1", path: "/t1"),
@@ -50,10 +49,12 @@ final class ShieldScriptletTests: XCTestCase {
     }
 
     private func shield(_ list: String) async throws -> Shield {
-        let lists = Shield.listsFolder(folder)
+        // A folder of its own, so a second list in one test is built afresh.
+        let own = folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let lists = Shield.listsFolder(own)
         try FileManager.default.createDirectory(at: lists, withIntermediateDirectories: true)
         try list.write(to: lists.appendingPathComponent("easylist.txt"), atomically: true, encoding: .utf8)
-        let shield = Shield(folder: folder, fetches: false)
+        let shield = Shield(folder: own, fetches: false)
         shield.start()
         await shield.settled()
         XCTAssertNotNil(shield.scriptlets, "the list's scriptlets made a script")
@@ -177,19 +178,50 @@ final class ShieldScriptletTests: XCTestCase {
         XCTAssertFalse(opener.opened.isEmpty)
     }
 
-    func testACoverOverAnySiteIsStopped() async throws {
-        let shield = try await shield("other.example##+js(nowoif)\n")
-        let (blocked, quiet) = bare(shield, "/t8")
-        defer { blocked.removeFromSuperview() }
-        let first = try await verdict(blocked)
-        XCTAssertEqual(first, "blocked/ok")
-        XCTAssertTrue(quiet.opened.isEmpty)
+    /// The cover fixture (t8) in a bare view as if served at `base`, so the
+    /// page's host is any the lists can name; popups allowed.
+    private func cover(_ shield: Shield, at base: String) async throws -> (verdict: String, opened: Int) {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        let controller = WKUserContentController()
+        configuration.userContentController = controller
+        let view = WKWebView(frame: window.bounds, configuration: configuration)
+        defer { view.removeFromSuperview() }
+        let url = try XCTUnwrap(URL(string: base))
+        shield.fit(controller, host: url.host(), isPrivate: false)
+        let opener = Opener()
+        view.uiDelegate = opener
+        window.addSubview(view)
+        view.loadHTMLString(try Self.fixture("t8-cover-guard"), baseURL: url)
+        return (try await verdict(view), opener.opened.count)
+    }
+
+    /// The click guard only on a site the lists name for a scriptlet, by its
+    /// host, a domain above it or an entity. A list naming other sites, a
+    /// `~site`, an exception or Shield off for the site leaves the cover to
+    /// open its ad.
+    func testACoverIsStoppedOnlyWhereTheListsNameTheSite() async throws {
+        let names = "##+js(set, yabFixtureUnused, true)"
+        let cases: [(list: String, at: String, blocked: Bool)] = [
+            ("news.test" + names, "https://news.test/", true),
+            ("news.test" + names, "https://www.news.test/", true),
+            ("news.*" + names, "https://news.test/", true),
+            ("other.example##+js(nowoif)", "https://news.test/", false),
+            ("news.test,~safe.news.test" + names, "https://safe.news.test/", false),
+            ("news.test" + names + "\nnews.test#@#+js()", "https://news.test/", false),
+        ]
+        for one in cases {
+            let shield = try await shield(one.list + "\n")
+            let (said, opened) = try await cover(shield, at: one.at)
+            XCTAssertEqual(said, one.blocked ? "blocked/ok" : "leaked/ok", "\(one.list) at \(one.at)")
+            XCTAssertEqual(opened == 0, one.blocked, "\(one.list) at \(one.at): \(opened) opened")
+        }
+        let shield = try await shield("news.test" + names + "\n")
         shield.wants = { _, _ in false }
-        let (control, opener) = bare(shield, "/t8")
-        defer { control.removeFromSuperview() }
-        let second = try await verdict(control)
-        XCTAssertEqual(second, "leaked/ok", "without the script the cover opens the ad")
-        XCTAssertFalse(opener.opened.isEmpty)
+        let (said, opened) = try await cover(shield, at: "https://news.test/")
+        XCTAssertEqual(said, "leaked/ok", "Shield off for the site: no script, the cover opens the ad")
+        XCTAssertGreaterThan(opened, 0)
     }
 
     // MARK: - no match, no trace

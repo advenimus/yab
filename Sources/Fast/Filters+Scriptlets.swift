@@ -77,6 +77,13 @@ extension Filters {
             }.joined(separator: "\n")
         }
 
+        /// The library as served: shield-scriptlets.js with the click guard
+        /// (shield-guard.js) inside at its marker, so the guard runs only
+        /// where the table names the page's site, then compacted.
+        static func library(_ scriptlets: String, clickGuard: String) -> String {
+            compact(scriptlets.replacingOccurrences(of: "__YAB_GUARD__", with: clickGuard))
+        }
+
         /// The page script: the library with Shield's off sites and the table
         /// in. OFF first: a list's argument could spell the other marker.
         static func page(_ library: String, table: String, off: String) -> String {

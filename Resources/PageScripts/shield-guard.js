@@ -1,11 +1,12 @@
-// Shield's click guard, on every site the lists reach: ad code lays a clear
-// link or box over the whole page so any click opens another site. A real
-// page never does, so that click is stopped and the cover taken away. Setup
-// is two listeners in the top frame; nothing is measured until a click.
-(function () {
-    'use strict';
-    var OFF = __YAB_OFF__;
-
+// Shield's click guard: ad code lays a clear link or box over the whole
+// page so any click opens another site. A real page never does, so that
+// click is stopped and the cover taken away. Setup is two listeners;
+// nothing is measured until a click.
+//
+// Served inside shield-scriptlets.js, at its marker (Filters.Scriptlets.library),
+// which calls it in the top frame of a site the lists name for a scriptlet,
+// where Shield is on: never on a site no list names.
+function guardClicks(host) {
     var SECOND_LEVEL = ' co com net org gov edu ac or ne go gob nic mil ';
     // Share of the viewport a cover hides: whole-page, never a card in a list.
     var COVER_SHARE = 0.6;
@@ -19,15 +20,6 @@
         if (parts.length < 3) return host;
         var keep = SECOND_LEVEL.indexOf(' ' + parts[parts.length - 2] + ' ') >= 0 ? 3 : 2;
         return parts.slice(-keep).join('.');
-    }
-
-    // WebKit leaves the script off where Shield is; Chromium carries it in OFF.
-    function allowed(host) {
-        if (!OFF) return true;
-        if (OFF.enabled === false) return false;
-        var off = OFF.off || [];
-        var bare = host.indexOf('www.') === 0 ? host.slice(4) : host;
-        return off.indexOf(host) < 0 && off.indexOf(bare) < 0;
     }
 
     function setUp(win, here) {
@@ -232,10 +224,5 @@
         }, true]);
     }
 
-    try {
-        if (window !== window.top) return;
-        var host = location.hostname.toLowerCase();
-        if (!host || !allowed(host)) return;
-        setUp(window, siteOf(host));
-    } catch (e) {}
-})();
+    setUp(window, siteOf(host));
+}

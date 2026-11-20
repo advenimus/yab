@@ -12,9 +12,9 @@ extension Shield {
         func load(_ name: String) -> String? {
             Bundle.main.url(forResource: name, withExtension: "js").flatMap { try? String(contentsOf: $0, encoding: .utf8) }
         }
-        // The click guard (shield-guard.js) rides along, as on the Mac.
+        // The click guard (shield-guard.js) goes inside, as on the Mac.
         guard let text = load("shield-scriptlets"), text.contains("__YAB_TABLE__"), let guardText = load("shield-guard") else { return nil }
-        return Filters.Scriptlets.compact(text + "\n" + guardText)
+        return Filters.Scriptlets.library(text, clickGuard: guardText)
     }()
 
     /// YAB_SHIELD_SCRIPTLETS=0 in the environment, or the launch argument

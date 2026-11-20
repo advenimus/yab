@@ -304,6 +304,13 @@ final class FiltersScriptletTests: XCTestCase {
         XCTAssertEqual(Filters.Scriptlets.compact("// only\n  // comments\n\n"), "")
     }
 
+    func testTheLibraryTakesTheClickGuardInsideAtItsMarker() {
+        let scriptlets = "(function () {\n  // run\n  if (top) guardClicks(host);\n  __YAB_GUARD__\n})();\n"
+        let clicks = "// the guard\nfunction guardClicks(host) {\n    listen(host);\n}\n"
+        XCTAssertEqual(Filters.Scriptlets.library(scriptlets, clickGuard: clicks),
+                       "(function () {\nif (top) guardClicks(host);\nfunction guardClicks(host) {\nlisten(host);\n}\n})();")
+    }
+
     func testCompactReadsWindowsLineEndings() {
         XCTAssertEqual(Filters.Scriptlets.compact("// a\r\n  x();\r\n\r\n  y();\r\n"), "x();\ny();")
     }

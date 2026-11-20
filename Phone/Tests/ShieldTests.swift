@@ -261,6 +261,8 @@ final class ShieldTests: XCTestCase {
     func testTheLibraryIsServedCompacted() throws {
         let library = try XCTUnwrap(Shield.scriptletLibrary)
         XCTAssertTrue(library.contains("__YAB_TABLE__") && library.contains("__YAB_OFF__"))
+        XCTAssertFalse(library.contains("__YAB_GUARD__"), "the click guard is in, at its marker")
+        XCTAssertTrue(library.contains("function guardClicks("))
         let lines = library.split(separator: "\n", omittingEmptySubsequences: false)
         XCTAssertGreaterThan(lines.count, 1)
         XCTAssertTrue(lines.allSatisfy { !$0.isEmpty && !$0.hasPrefix(" ") && !$0.hasPrefix("\t") && !$0.hasPrefix("//") })
@@ -286,15 +288,15 @@ final class ShieldTests: XCTestCase {
         XCTAssertEqual(again.scriptlets?.source.contains("news.example"), false)
     }
 
-    func testNoScriptWithTheSwitchOffAndTheGuardWithNoneInTheLists() async throws {
+    func testNoScriptWithTheSwitchOffOrNoneInTheLists() async throws {
         XCTAssertTrue(Shield.scriptletsAllowed(environment: [:], arguments: []))
         XCTAssertFalse(Shield.scriptletsAllowed(environment: ["YAB_SHIELD_SCRIPTLETS": "0"], arguments: []))
         XCTAssertFalse(Shield.scriptletsAllowed(environment: [:], arguments: ["-YAB_SHIELD_SCRIPTLETS", "0"]))
         let plain = Shield(folder: folder.appendingPathComponent("plain", isDirectory: true), fetches: false)
         plain.start()
         await plain.settled()
-        let guardOnly = try XCTUnwrap(plain.scriptlets, "the built-in list has no ##+js, yet the click guard still goes on pages")
-        XCTAssertTrue(guardOnly.source.contains("\"calls\":\"\""))
+        XCTAssertNil(plain.scriptlets, "the built-in list has no ##+js: it names no site, so no page gets the click guard either")
+        XCTAssertFalse(plain.lists.isEmpty)
         let off = try await started(with: "news.example##+js(aopr, aclib)\n", scriptlets: false)
         XCTAssertNil(off.scriptlets)
         XCTAssertFalse(off.lists.isEmpty, "the lists block as before")

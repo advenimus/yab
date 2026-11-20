@@ -37,11 +37,11 @@ enum ShieldScriptlets {
     private static var webKitScript: (digest: String, script: WKUserScript)?
     private static var chromiumSources: [ChromiumPolicy: String] = [:]
 
-    // The click guard (shield-guard.js) rides along, so every page with the lists gets it.
-    nonisolated private static let template = Filters.Scriptlets.compact(PageScript.load("shield-scriptlets") + "\n" + PageScript.load("shield-guard"))
+    nonisolated private static let template = Filters.Scriptlets.library(PageScript.load("shield-scriptlets"), clickGuard: PageScript.load("shield-guard"))
 
     nonisolated static func source(_ table: String, off: String) -> String {
-        assert(template.contains("__YAB_TABLE__") && template.contains("__YAB_OFF__"), "shield-scriptlets.js lost its markers")
+        assert(template.contains("__YAB_TABLE__") && template.contains("__YAB_OFF__") && template.contains("function guardClicks("),
+               "shield-scriptlets.js lost its markers")
         return Filters.Scriptlets.page(template, table: table, off: off)
     }
 
@@ -53,8 +53,8 @@ enum ShieldScriptlets {
 
     /// Off the main thread, from the build that made the rules.
     nonisolated static func write(_ rules: Filters.Rules) {
-        // Even with no ##+js, an empty table carries the click guard to pages.
-        let text = rules.scriptlets.table()
+        // No ##+js names no site: no page gets the script, nor the click guard in it.
+        let text = rules.scriptlets.isEmpty ? "" : rules.scriptlets.table()
         NSLog("yab: shield scriptlets: %d calls, %d bytes; %@", rules.scriptlets.calls.count, text.utf8.count, droppedSummary(rules.dropped))
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? Data(text.utf8).write(to: file, options: .atomic)

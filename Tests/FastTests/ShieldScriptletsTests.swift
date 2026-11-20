@@ -149,19 +149,71 @@ struct ShieldScriptletsTests {
         }
     }
 
-    // The click guard, on a site no list names: a clear cover over the page
-    // leading to another site is stopped, a card's link or the site's own is not.
-    @Test func aCoverOverAnySiteIsStopped() async throws {
-        let html = try fixture("t8-cover-guard")
-        for script in [true, false] {
-            let restore = use(script ? table("other.example##+js(nowoif)") : nil)
-            defer { restore() }
-            // A cover is measured against the viewport, so the page needs one.
-            let opened = tab()
-            defer { opened.close() }
-            opened.tab.page.setFrameSize(NSSize(width: 800, height: 600))
-            opened.tab.page.navigate(html: html, base: URL(string: "https://news.test/")!)
-            #expect(try await verdict(opened.tab) == (script ? "blocked/ok" : "leaked/ok"), "script \(script)")
+    /// A scriptlet that touches nothing the cover fixtures use: what names a
+    /// site for the click guard without stopping the cover itself, as nowoif would.
+    private static let names = "##+js(set, yabFixtureUnused, true)"
+
+    /// The cover fixture (t8) at `address`, with this table in place.
+    private func cover(at address: String, _ table: ShieldScriptlets.Table?) async throws -> String {
+        let restore = use(table)
+        defer { restore() }
+        // A cover is measured against the viewport, so the page needs one.
+        let opened = tab()
+        defer { opened.close() }
+        opened.tab.page.setFrameSize(NSSize(width: 800, height: 600))
+        opened.tab.page.navigate(html: try fixture("t8-cover-guard"), base: URL(string: address)!)
+        return try await verdict(opened.tab)
+    }
+
+    // The click guard, only on a site the lists name for a scriptlet, by
+    // its host, a domain above it or an entity: a clear cover over the
+    // page leading to another site is stopped there, a card's link or the
+    // site's own is not. A table naming other sites, a `~site` or an
+    // exception leaves the page as it would be without the script.
+    @Test func aCoverIsStoppedOnlyWhereTheListsNameTheSite() async throws {
+        let cases: [(rules: [String], at: String, verdict: String)] = [
+            (["news.test" + Self.names], "https://news.test/", "blocked/ok"),
+            (["news.test" + Self.names], "https://www.news.test/", "blocked/ok"),
+            (["news.*" + Self.names], "https://news.test/", "blocked/ok"),
+            (["other.example##+js(nowoif)"], "https://news.test/", "leaked/ok"),
+            (["news.test,~safe.news.test" + Self.names], "https://safe.news.test/", "leaked/ok"),
+            (["news.test" + Self.names, "news.test#@#+js()"], "https://news.test/", "leaked/ok"),
+            (["news.test" + Self.names, "news.test#@#+js(set, yabFixtureUnused, true)"], "https://news.test/", "leaked/ok"),
+            ([], "https://news.test/", "leaked/ok"),
+        ]
+        for one in cases {
+            let made = one.rules.isEmpty ? nil : ShieldScriptlets.Table(Filters.convert([one.rules.joined(separator: "\n")]).scriptlets.table())
+            #expect(try await cover(at: one.at, made) == one.verdict, "\(one.rules) at \(one.at)")
+        }
+    }
+
+    @Test func aCoverIsLeftWhereShieldIsOffForTheSite() async throws {
+        let wasPaused = Shield.shared.isPaused(on: "news.test")
+        Shield.shared.pause("news.test", true)
+        defer { Shield.shared.pause("news.test", wasPaused) }
+        #expect(try await cover(at: "https://news.test/", table("news.test" + Self.names)) == "leaked/ok")
+    }
+
+    // Chromium registers one script for every site and carries where Shield
+    // is off in it, so the page decides. Its exact text, run here by
+    // WebKit: the same page script, not Yab's Chromium.
+    @Test func chromiumsCopyLeavesACoverWhereShieldIsOffForTheSite() async throws {
+        let restore = use(table("news.test" + Self.names))
+        defer { restore() }
+        let opened = tab()
+        defer { opened.close() }
+        let wasPaused = Shield.shared.isPaused(on: "news.test")
+        defer { Shield.shared.pause("news.test", wasPaused) }
+        for paused in [false, true] {
+            Shield.shared.pause("news.test", paused)
+            let policy = try #require(ShieldScriptlets.chromiumPolicy(for: opened.tab, host: "news.test"))
+            let source = try #require(ShieldScriptlets.chromium(policy)).source
+            let configuration = WKWebViewConfiguration()
+            configuration.userContentController.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page))
+            let view = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
+            view.loadHTMLString(try fixture("t8-cover-guard"), baseURL: URL(string: "https://news.test/"))
+            #expect(try await Loaded.until(4) { view.title?.contains("/") == true }, "paused \(paused)")
+            #expect(view.title == (paused ? "leaked/ok" : "blocked/ok"), "paused \(paused)")
         }
     }
 
@@ -171,7 +223,7 @@ struct ShieldScriptletsTests {
     @Test func aCoverThatOpensTwiceOpensNothing() async throws {
         let html = try fixture("t9-cover-opens-twice")
         for script in [true, false] {
-            let restore = use(script ? table("other.example##+js(nowoif)") : nil)
+            let restore = use(script ? table("news.test" + Self.names) : nil)
             defer { restore() }
             let opened = tab(bench: true)
             defer { opened.close() }
@@ -327,6 +379,22 @@ struct ShieldScriptletsTests {
         #expect(ShieldScriptlets.table?.webKitSource.contains("__YAB_") == false)
         let written = try String(contentsOf: file, encoding: .utf8)
         #expect(written == rules.scriptlets.table())
+    }
+
+    // No ##+js in the lists names no site, so no page gets the script, the
+    // click guard with it.
+    @Test func aBuildWithNoScriptletsPutsNoScriptOnPages() async throws {
+        let restore = use(table("popups.example##+js(nowoif)"))
+        defer { restore() }
+        let file = Store.folder.appendingPathComponent("Shield/scriptlets.txt")
+        let kept = try? Data(contentsOf: file)
+        defer { if let kept { try? kept.write(to: file) } else { try? FileManager.default.removeItem(at: file) } }
+        ShieldScriptlets.write(Filters.convert(["||ads.example^\nexample.org##.ad"]))
+        #expect(try await Loaded.until(2) { ShieldScriptlets.table == nil })
+        #expect(try String(contentsOf: file, encoding: .utf8) == "")
+        let opened = tab()
+        defer { opened.close() }
+        #expect(scriptlets(in: PageScripts.list(for: opened.tab, .init(host: "news.test", css: ""))).isEmpty)
     }
 
     /// What a page can tell of its own functions: their names, lengths,
