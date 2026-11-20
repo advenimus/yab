@@ -60,6 +60,9 @@ final class BrowserWorkspace {
     private(set) var secondFocused = false
     private(set) var expanded = false
     var paneFrame = CGRect.zero
+    /// The iPad's downloads button in sight, by its id, in the window:
+    /// where a file flies to (TabletDownloadFlights).
+    @ObservationIgnored var downloadsLandings: [String: CGRect] = [:]
     var windowSize = CGSize.zero
     var tabletControls = false
     var regularWidth = false

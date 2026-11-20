@@ -33,6 +33,16 @@ extension Metrics {
         static let downloadsInset: CGFloat = 8
         static let downloadDot: CGFloat = 7
         static let downloadDotInset: CGFloat = 9
+        /// The Mac's Hoard: the badge's ring round the button's mark, the
+        /// disc a file is thrown as, its lift, its arc and how far it rises.
+        static let downloadRing: CGFloat = 26
+        static let downloadRingLine: CGFloat = 2
+        static let downloadDisc: CGFloat = 24
+        static let downloadLift: Double = 0.11
+        static let downloadArc: Double = 0.56
+        static let downloadRise: CGFloat = 6
+        static let downloadArcHeight: CGFloat = 90
+        static let downloadBump: CGFloat = 1.18
         static let pinGap: CGFloat = 7
         static let pinMinWidth: CGFloat = 47
         static let pinMaxColumns = 4
