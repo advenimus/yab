@@ -36,6 +36,21 @@ struct CookieStepPaceTests {
         return (browser, chromium, page)
     }
 
+    /// A registered window holding a Chromium tab and a WebKit tab on one
+    /// private store, as a private window's tabs share one, both built.
+    private func pair(_ window: NSWindow) -> (browser: Browser, chromium: Tab, web: Tab) {
+        _ = NSApplication.shared
+        let configuration = Web.configuration(shy: true)
+        let chromium = Tab(shy: true, configuration: configuration, engine: .chromium, factory: factory)
+        let web = Tab(shy: true, configuration: configuration)
+        let browser = Browser(windowID: UUID())
+        browser.prepare(chromium); browser.prepare(web)
+        browser.lay([chromium, web])
+        BrowserWindows.shared.register(window, for: browser)
+        _ = chromium.page; _ = web.page
+        return (browser, chromium, web)
+    }
+
     private func letGo(_ browser: Browser, _ window: NSWindow) {
         for tab in browser.pagesHeld { (tab.builtPage as? ChromiumPage)?.retire(call: false, pictureInPicture: false); tab.close() }
         window.close()
@@ -89,30 +104,34 @@ struct CookieStepPaceTests {
     @Test func aFrameOpeningAHostOnBothEnginesCutsASlowWaitShort() async throws {
         let restore = sight(active: false, windows: false)
         defer { restore() }
-        let tab = Tab(shy: true)
-        let bridge = try ChromiumDRMCookies.of(tab)
-        defer { ChromiumDRMCookies.retirePrivate(bridge.profile); tab.close() }
+        let window = window()
+        let made = pair(window)
+        defer { letGo(made.browser, window) }
+        let bridge = try ChromiumDRMCookies.of(made.chromium)
+        defer { ChromiumDRMCookies.retirePrivate(bridge.profile) }
         let frame = host("frame")
-        bridge.touched(frame, mainFrame: false, by: .chromium)
+        bridge.touched(frame, mainFrame: false, by: .chromium, in: made.chromium.id)
         bridge.keepInStep()
         #expect(try await due(bridge) > 20)
         // A WebKit page puts the same site in a frame: now open on both.
-        bridge.touched(frame, mainFrame: false, by: .webKit)
+        bridge.touched(frame, mainFrame: false, by: .webKit, in: made.web.id)
         #expect(try await due(bridge) <= 3.5)
     }
 
     @Test func aRedirectLandingOnAHostTheOtherEngineHasCutsASlowWaitShort() async throws {
         let restore = sight(active: false, windows: false)
         defer { restore() }
-        let tab = Tab(shy: true)
-        let bridge = try ChromiumDRMCookies.of(tab)
-        defer { ChromiumDRMCookies.retirePrivate(bridge.profile); tab.close() }
+        let window = window()
+        let made = pair(window)
+        defer { letGo(made.browser, window) }
+        let bridge = try ChromiumDRMCookies.of(made.chromium)
+        defer { ChromiumDRMCookies.retirePrivate(bridge.profile) }
         let site = host("redirect")
-        bridge.touched(site, mainFrame: false, by: .chromium)
+        bridge.touched(site, mainFrame: false, by: .chromium, in: made.chromium.id)
         bridge.keepInStep()
         #expect(try await due(bridge) > 20)
         // A WebKit page's server redirect lands there: its page has no address yet.
-        bridge.touched(site, by: .webKit)
+        bridge.touched(site, by: .webKit, in: made.web.id)
         #expect(try await due(bridge) <= 3.5)
     }
 
@@ -130,5 +149,44 @@ struct CookieStepPaceTests {
         // The tab switched to: the stage puts its page in the window.
         window.contentView?.addSubview(made.page)
         #expect(try await due(bridge) <= 3.5)
+    }
+    @Test func framesCountOnlyWhileTheirPageIsOpenOnThatSite() throws {
+        let restore = sight(active: false, windows: false)
+        defer { restore() }
+        let window = window()
+        let (browser, chromium, web) = pair(window)
+        defer { letGo(browser, window) }
+        let bridge = try ChromiumDRMCookies.of(chromium)
+        defer { ChromiumDRMCookies.retirePrivate(bridge.profile) }
+        let frame = host("frame"), site = try #require(frame.host())
+        bridge.touched(host("chromium-page"), by: .chromium, in: chromium.id)
+        bridge.touched(frame, mainFrame: false, by: .chromium, in: chromium.id)
+        bridge.touched(frame, mainFrame: false, by: .webKit, in: web.id)
+        // In a frame on each engine: shared, so quick, and every pass reads it.
+        #expect(bridge.paceForTesting.wait == 3)
+        #expect(bridge.paceForTesting.shared == [site])
+        // The Chromium page goes to another site: its frames went with the document.
+        bridge.touched(host("elsewhere"), by: .chromium, in: chromium.id)
+        #expect(bridge.paceForTesting.wait > 20)
+        #expect(bridge.paceForTesting.shared.isEmpty)
+        // Back in a frame there, then the WebKit tab closed: no longer open on WebKit.
+        bridge.touched(frame, mainFrame: false, by: .chromium, in: chromium.id)
+        #expect(bridge.paceForTesting.wait == 3)
+        web.close()
+        #expect(bridge.paceForTesting.wait > 20)
+        #expect(bridge.paceForTesting.shared.isEmpty)
+    }
+
+    @Test func aRequestOfYabsOwnCountsOnlyForTheNextWait() throws {
+        let restore = sight(active: false, windows: false)
+        defer { restore() }
+        let tab = Tab(shy: true)
+        let bridge = try ChromiumDRMCookies.of(tab)
+        defer { ChromiumDRMCookies.retirePrivate(bridge.profile); tab.close() }
+        let site = host("own")
+        bridge.touched(site, mainFrame: false, by: .chromium)
+        bridge.touched(site, mainFrame: false, by: .webKit)
+        // No page holds either: nothing stays open on both.
+        #expect(bridge.paceForTesting.wait > 20)
     }
 }

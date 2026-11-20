@@ -707,7 +707,7 @@ final class ChromiumPage: YabTextCheckingView, PageHandle, PageAudioControl {
                 guard tab.chromiumProfile == self.profile else { throw SiteEngineError.profileChanged }
                 // Cookies that didn't carry over cost a sign-in, never the page.
                 OpenTrace.mark("chromium.cookies.begin")
-                do { if !LinkGap.cut("chromium.cookies") { try await ChromiumDRMCookies.of(tab).prepare(for: target, in: .chromium) } }
+                do { if !LinkGap.cut("chromium.cookies") { try await ChromiumDRMCookies.of(tab).prepare(for: target, in: .chromium, page: tab.id) } }
                 catch is CancellationError { throw CancellationError() }
                 catch { NSLog("DRM cookies: not carried over: %@", String(describing: error)) }
                 OpenTrace.mark("chromium.cookies.end")
@@ -860,7 +860,7 @@ final class ChromiumPage: YabTextCheckingView, PageHandle, PageAudioControl {
     /// Heard from the helper: `url` is being navigated to in this page.
     func cookiesTouched(_ url: URL, mainFrame: Bool) {
         guard !retired else { return }
-        ChromiumDRMCookies.session(of: tab)?.touched(url, mainFrame: mainFrame, by: .chromium)
+        ChromiumDRMCookies.session(of: tab)?.touched(url, mainFrame: mainFrame, by: .chromium, in: tab?.id)
     }
     /// `recover`: the page comes back by itself, now if it is on screen,
     /// else when it next is. Out of retries, it says what happened.

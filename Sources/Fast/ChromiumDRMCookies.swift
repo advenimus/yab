@@ -178,6 +178,8 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     /// `prepareFrame`, `beforeSending`, `current`): slower out of sight, and
     /// slower still while saving power.
     nonisolated private static let stepAway: TimeInterval = 30
+    /// Low Power Mode counts too, though it starts no page saving (Thrift):
+    /// this is Yab's own background work, which macOS asks to hold back.
     nonisolated private static let stepSaving: TimeInterval = 60
     nonisolated private static let stepRound = 5
     private static let stepHosts = 12
@@ -222,9 +224,10 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     private var importSkip = Set<String>()
     private var visited: [String] = []
     private var framed: [String] = []
-    /// Frame hosts by the engine that loaded them: a site in a frame on one
-    /// engine and a page on the other is open on both.
-    private var framedBy: [PageEngineKind: [String]] = [:]
+    /// Frame hosts by the page that loaded them, most recent first, while
+    /// that page is open and on that site: a site in a frame on one engine
+    /// and a page on the other is open on both.
+    private var frames: [Tab.ID: (site: String?, hosts: [String])] = [:]
     private var dirty = Set<String>()
     private var webKitChanged = false
     private var paths: [String: Set<String>] = [:]
@@ -336,8 +339,9 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     }
 
     /// A page is going through this address: a main frame's hop needs looking
-    /// at once it lands, a frame's when the engines next hand over.
-    func touched(_ url: URL, mainFrame: Bool = true, by engine: PageEngineKind? = nil) {
+    /// at once it lands, a frame's when the engines next hand over. `page`:
+    /// the tab it is in, none for Yab's own requests.
+    func touched(_ url: URL, mainFrame: Bool = true, by engine: PageEngineKind? = nil, in page: Tab.ID? = nil) {
         guard let host = Self.host(of: url) else { return }
         if !url.path.isEmpty { paths[host, default: []].insert(url.path) }
         if let engine { usedSince[engine, default: []].insert(host) }
@@ -349,10 +353,16 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
             framed.removeAll { $0 == host }; framed.insert(host, at: 0)
             if framed.count > Self.remembered { framed.removeLast() }
         }
-        if !mainFrame, let engine {
-            var hosts = framedBy[engine] ?? []
-            hosts.removeAll { $0 == host }; hosts.insert(host, at: 0)
-            framedBy[engine] = Array(hosts.prefix(Self.remembered))
+        if let page {
+            var held = frames[page] ?? (nil, [])
+            if mainFrame {
+                // Another site: the frames went with the document they were in.
+                if held.site != host { held = (host, []) }
+            } else {
+                held.hosts.removeAll { $0 == host }; held.hosts.insert(host, at: 0)
+                held.hosts = Array(held.hosts.prefix(Self.remembered))
+            }
+            frames[page] = held
         }
         // A frame, a redirect's hop or Yab's own request may open a host the
         // other engine has open, with no page event to say so.
@@ -395,10 +405,10 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     /// the last to use anything, settles every host that engine has used since
     /// the last one: a page reaches hosts by frames, redirects and requests
     /// nothing can hold back, and each must find the newest value here.
-    func prepare(for url: URL, in engine: PageEngineKind) async throws {
+    func prepare(for url: URL, in engine: PageEngineKind, page: Tab.ID? = nil) async throws {
         guard !retired else { throw CancellationError() }
         guard let host = Self.host(of: url) else { return }
-        touched(url, by: engine)
+        touched(url, by: engine, in: page)
         startImport()
         dirty.remove(host)
         await settle(host, for: engine)
@@ -429,9 +439,9 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
 
     /// A frame about to load on WebKit, whose navigation can wait: it sends
     /// what the jar holds for its host, whoever used that host last.
-    func prepareFrame(_ url: URL) async {
+    func prepareFrame(_ url: URL, in page: Tab.ID?) async {
         guard !retired, let host = Self.host(of: url) else { return }
-        touched(url, mainFrame: false, by: .webKit)
+        touched(url, mainFrame: false, by: .webKit, in: page)
         guard settled[host]?.engine != .webKit || webKitChanged else { return }
         settled[host]?.engine = .webKit
         await Self.wait(for: serial { [weak self] in try await self?.reconcile(host) }, seconds: Self.crossingWait)
@@ -478,12 +488,14 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
     }
 
     private func stepWait(adding: [(host: String, engine: PageEngineKind)]) -> TimeInterval {
-        let pages = livePages
-        let chromium = pages.chromium.union(framedBy[.chromium] ?? []), webKit = pages.webKit.union(framedBy[.webKit] ?? [])
+        let open = openHosts()
         let shown = Self.seen(in: BrowserWindows.shared.browsers, holds: holds)
-        return Self.stepEvery(shared: Self.shares(chromium: Array(chromium), webKit: webKit, adding: adding), active: Self.appActive(),
+        return Self.stepEvery(shared: Self.shares(chromium: Array(open.chromium), webKit: open.webKit, adding: adding), active: Self.appActive(),
                               shown: shown, saving: Thrift.on || ProcessInfo.processInfo.isLowPowerModeEnabled)
     }
+
+    /// The wait the step would take now, nothing on its way, and the hosts a pass reads every time.
+    var paceForTesting: (wait: TimeInterval, shared: [String]) { (stepWait(adding: []), liveHosts.shared) }
 
     /// Held for the run, as the bridges are: these only ever shorten a wait.
     private static var stepWakes: [NSObjectProtocol] = []
@@ -552,8 +564,12 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
 
     /// Restarted only when the quicker wait ends before the one under way;
     /// a wait no longer than the quickest isn't looked at again.
+    /// A host already counted for the wait under way changes nothing.
     private func quickenStep(adding: (host: String, engine: PageEngineKind)? = nil) {
-        if let adding, stepping != nil, !stepShare.contains(where: { $0 == adding }) { stepShare.append(adding) }
+        if let adding, stepping != nil {
+            guard !stepShare.contains(where: { $0 == adding }) else { return }
+            stepShare.append(adding)
+        }
         guard let due = stepDue, due.timeIntervalSinceNow > Self.stepEvery,
               Date().addingTimeInterval(stepWait(adding: stepShare)) < due else { return }
         restartStep(now: false)
@@ -580,7 +596,8 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
                 guard !live.chromium.isEmpty else { self.stepping = nil; self.stepShare = []; return }
                 self.stepPass += 1
                 let pass = self.stepPass
-                var hosts = live.chromium.filter(live.webKit.contains)
+                // Every host the pace counts as shared, a frame's too.
+                var hosts = live.shared
                 if Self.roundDue(pass: pass, wait: self.stepLastWait) {
                     // In turn: a frame's host, where sign-ins live, gets its go too.
                     self.stepRounds += 1
@@ -593,23 +610,32 @@ final class ChromiumDRMCookies: NSObject, WKHTTPCookieStoreObserver {
         }
     }
 
-    /// The hosts of each engine's pages: Chromium's the most recently used
-    /// first, then the frames they have opened.
-    /// The hosts of each engine's pages.
-    private var livePages: (chromium: Set<String>, webKit: Set<String>) {
-        var chromium = Set<String>(), webKit = Set<String>()
+    /// The hosts open on each engine, its pages' and their frames', and
+    /// Chromium's pages' own. Frames of pages no longer open are let go.
+    private func openHosts() -> (chromium: Set<String>, webKit: Set<String>, chromiumPages: Set<String>) {
+        var chromium = Set<String>(), webKit = Set<String>(), pages = Set<String>(), open = Set<Tab.ID>()
         for tab in BrowserWindows.shared.browsers.flatMap(\.pagesHeld) {
-            guard !tab.gone, let page = tab.builtPage, holds(tab.pageStore), let host = page.url.flatMap(Self.host) else { continue }
-            if page.engine == .chromium { chromium.insert(host) } else { webKit.insert(host) }
+            guard !tab.gone, let page = tab.builtPage, holds(tab.pageStore) else { continue }
+            open.insert(tab.id)
+            let host = page.url.flatMap(Self.host)
+            let hosts = (host.map { [$0] } ?? []) + (frames[tab.id]?.hosts ?? [])
+            if page.engine == .chromium {
+                chromium.formUnion(hosts)
+                if let host { pages.insert(host) }
+            } else { webKit.formUnion(hosts) }
         }
-        return (chromium, webKit)
+        if frames.keys.contains(where: { !open.contains($0) }) { frames = frames.filter { open.contains($0.key) } }
+        return (chromium, webKit, pages)
     }
 
-    private var liveHosts: (chromium: [String], webKit: Set<String>) {
-        let (chromium, webKit) = livePages
-        var hosts = visited.filter(chromium.contains) + chromium.subtracting(visited).sorted()
+    /// Chromium's pages' hosts, the most recently used first, then the frames
+    /// they have opened; and those open on both engines, Chromium's order first.
+    private var liveHosts: (chromium: [String], shared: [String]) {
+        let open = openHosts()
+        var hosts = visited.filter(open.chromiumPages.contains) + open.chromiumPages.subtracting(visited).sorted()
         if !hosts.isEmpty { hosts += framed.filter { !hosts.contains($0) } }
-        return (hosts, webKit)
+        let shared = open.chromium.intersection(open.webKit)
+        return (hosts, hosts.filter(shared.contains) + shared.subtracting(hosts).sorted())
     }
 
     /// A native request is about to read the jar for `url`, for a boost's tool
