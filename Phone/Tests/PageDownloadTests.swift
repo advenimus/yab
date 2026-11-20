@@ -78,6 +78,11 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertNil(window.rootViewController?.presentedViewController, "nothing covers the page: no alert, no share sheet")
         return try XCTUnwrap(store.entries.first)
     }
+    /// WKWebView.url can still name the file for a moment after it is whole,
+    /// then reads the source again with no navigation: wait that moment out.
+    private func settles(_ view: WKWebView, at url: URL) async throws {
+        try await require({ view.url == url }, "the source's address did not come back")
+    }
     private func bytes(_ entry: DownloadEntry) throws -> Data { try Data(contentsOf: try XCTUnwrap(store.url(of: entry))) }
     private func failed() async throws -> DownloadEntry {
         try await require { self.store.entries.first?.state == .failed && self.pages.transfers.isEmpty }
@@ -130,7 +135,7 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertEqual(file.name, "Owned.txt")
         XCTAssertEqual(file.host, "127.0.0.1")
         XCTAssertEqual(file.size, Int64(DownloadSite.bytes.count))
-        XCTAssertEqual(view.url, site.url("/second")); XCTAssertTrue(view.configuration.websiteDataStore === store)
+        try await settles(view, at: site.url("/second")); XCTAssertTrue(view.configuration.websiteDataStore === store)
         XCTAssertEqual(pages.front, source.id)
         XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), before.entries.map(\.url))
         XCTAssertEqual(pages.navigationState(for: source.id)?.index, before.index)
@@ -238,7 +243,7 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertTrue(request.header.contains("private-only=owned")); XCTAssertFalse(request.header.contains("public-only=owned"))
         XCTAssertTrue(view.configuration.websiteDataStore === store); XCTAssertFalse(store.isPersistent)
         XCTAssertFalse(store === publicView.configuration.websiteDataStore)
-        XCTAssertEqual(view.url, site.url("/page")); XCTAssertEqual(pages.front, privateTab.id); XCTAssertTrue(exported.isEmpty)
+        try await settles(view, at: site.url("/page")); XCTAssertEqual(pages.front, privateTab.id); XCTAssertTrue(exported.isEmpty)
         // The private tabs close: their file goes.
         let url = try XCTUnwrap(self.store.url(of: file))
         pages.setPageInteractionsEnabled(false); pages.renewPrivateStore()
@@ -260,7 +265,7 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertEqual(before.entries.map(\.url), [site.url("/page").absoluteString, destination.absoluteString])
         try await click(view)
         _ = try await completed()
-        XCTAssertEqual(view.url, destination)
+        try await settles(view, at: destination)
         XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), before.entries.map(\.url))
         XCTAssertEqual(pages.navigationState(for: source.id)?.index, before.index)
     }
@@ -271,7 +276,7 @@ final class PageDownloadTests: XCTestCase {
         let _: Any = try await view.evaluateJavaScript("const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['Owned blob café+tea'],{type:'text/plain'}));a.download='Blob.txt';document.body.appendChild(a);a.click();true")
         let file = try await completed()
         XCTAssertEqual(String(data: try bytes(file), encoding: .utf8), "Owned blob café+tea")
-        XCTAssertEqual(view.url, site.url("/page")); XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), before.entries.map(\.url))
+        try await settles(view, at: site.url("/page")); XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), before.entries.map(\.url))
     }
 
     func testATransferOutlivesItsPageItsTabAndAViewGone() async throws {
@@ -318,7 +323,7 @@ final class PageDownloadTests: XCTestCase {
         let broken = try await failed()
         XCTAssertEqual(store.flash, broken.id, "the line says Failed for a moment")
         XCTAssertEqual(store.nowItem(isPrivate: false)?.subtitle, "Failed")
-        XCTAssertEqual(view.url, site.url("/page"))
+        try await settles(view, at: site.url("/page"))
         XCTAssertNil(broken.file)
         XCTAssertTrue(store.canRetry(broken.id))
         site.allowFiles(); store.retry(broken.id)
@@ -327,7 +332,7 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertEqual(store.entries.count, 1)
         XCTAssertEqual(site.requests.filter { $0.target == "/file" }.count, 2)
         XCTAssertEqual(try bytes(file), DownloadSite.bytes)
-        XCTAssertEqual(view.url, site.url("/page")); XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), [site.url("/page").absoluteString])
+        try await settles(view, at: site.url("/page")); XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), [site.url("/page").absoluteString])
         let _: Any = try await view.evaluateJavaScript("document.getElementById('touch').click();true")
         let action = try await view.evaluateJavaScript("document.getElementById('result').textContent") as? String
         XCTAssertEqual(action, "Page action 1")
@@ -376,7 +381,7 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertEqual(file.host, "127.0.0.1", "the site is the page's")
         XCTAssertEqual(try bytes(file), DownloadSite.bytes)
         XCTAssertTrue(try XCTUnwrap(site.requests.last { $0.target == "/file" }).header.contains("linked=owned"))
-        XCTAssertEqual(view.url, site.url("/page"))
+        try await settles(view, at: site.url("/page"))
         XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), before.entries.map(\.url))
     }
 
@@ -397,7 +402,7 @@ final class PageDownloadTests: XCTestCase {
         try await require { viewed.count == 1 }
         XCTAssertEqual(viewed.first?.0, source.id)
         XCTAssertEqual(viewed.first?.1, file.id)
-        XCTAssertEqual(view.url, site.url("/page"))
+        try await settles(view, at: site.url("/page"))
         XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), before.entries.map(\.url))
     }
 
@@ -469,7 +474,7 @@ final class PageDownloadTests: XCTestCase {
         try await require { self.site.requests.filter { $0.target == "/file" }.count == 2 }
         XCTAssertTrue(pages.transfers.isEmpty)
         XCTAssertTrue(store.entries.isEmpty)
-        XCTAssertEqual(view.url, site.url("/page")); XCTAssertEqual(pages.front, selected.id)
+        try await settles(view, at: site.url("/page")); XCTAssertEqual(pages.front, selected.id)
     }
 
     // MARK: - with Yab in the background
@@ -494,7 +499,7 @@ final class PageDownloadTests: XCTestCase {
         pages.appDidBecomeActive()
         try await require { self.store.flash == job.id }
         XCTAssertEqual(store.nowItem(isPrivate: false)?.subtitle, "Open")
-        XCTAssertEqual(view.url, site.url("/page"))
+        try await settles(view, at: site.url("/page"))
     }
 
     func testComingBackWhileItStillGoesKeepsTheLine() async throws {
