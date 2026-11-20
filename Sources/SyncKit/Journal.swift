@@ -171,11 +171,15 @@ public final class Journal: @unchecked Sendable {
                     var want = fields
                     if started, let had = have[id]?.0, let was = base[id] {
                         // Only what the files changed since they last said
-                        // `was`, over the record as it stands.
+                        // `was`, over the record as it stands. One removed
+                        // elsewhere comes back with all the files say: its
+                        // fields went with the removal.
                         let edits = Journal.edits(fields, since: was)
                         if edits.isEmpty { continue }
-                        want = had.visible
-                        for (name, value) in edits { want[name] = value }
+                        if had.alive(kind) {
+                            want = had.visible
+                            for (name, value) in edits { want[name] = value }
+                        }
                     }
                     if record.update(to: want, clock: clock, kind: kind) {
                         try save(record, dirty: true, version: have[id]?.1)
@@ -790,7 +794,11 @@ public final class Journal: @unchecked Sendable {
                     let dirty = had.map { $0.dirty && merged != theirs } ?? false
                     try save(merged, dirty: dirty, version: max(version, had?.version ?? 0))
                     if let had {
-                        if had.record.visible != merged.visible || had.record.alive(kind) != merged.alive(kind) {
+                        // A record removed already that now carries
+                        // something new (a visit's cut) is news too: its
+                        // mirror reads why it went.
+                        let said = !merged.alive(kind) && merged.fields.contains { !$0.value.isNull && had.record.fields[$0.key] != $0.value }
+                        if had.record.visible != merged.visible || had.record.alive(kind) != merged.alive(kind) || said {
                             changed.append(merged)
                         }
                     } else if merged.alive(kind) {

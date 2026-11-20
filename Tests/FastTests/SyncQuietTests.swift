@@ -99,7 +99,6 @@ struct SyncQuietTests {
                 keychains[mac][record.id] = Wallet.addressData(incoming)
             }
         })
-        print("address: records sent per round", sent)
         #expect(sent.first == 1)
         #expect(sent.dropFirst().allSatisfy { $0 == 0 }, "sent per round: \(sent)")
         for keychain in keychains { #expect(keychain[home.id].flatMap(Wallet.address(of:)) == home) }
@@ -175,7 +174,6 @@ struct SyncQuietTests {
                 _ = privacies[mac].mergeSyncedProfile(incoming, epoch: privacies[mac].epoch, stamp: record.latest, image: ContextSyncReplay.image(record))
             }
         })
-        print("profile: records sent per round", sent)
         #expect(sent.first == 1)
         #expect(sent.dropFirst().allSatisfy { $0 == 0 }, "sent per round: \(sent)")
         let first = Profile.load(from: files[0])
@@ -266,7 +264,6 @@ struct SyncQuietTests {
             histories[mac].adoptSynced(SyncShapes.visits(from: records))
             histories[mac].dropSynced(SyncShapes.cutVisits(from: records))
         })
-        print("visits: records sent per round", sent)
         #expect(sent.suffix(5).allSatisfy { $0 == 0 }, "sent per round: \(sent)")
         // Every Mac ends on the latest visit, its address with its title.
         for history in histories {

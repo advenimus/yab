@@ -301,6 +301,43 @@ struct SyncKitTests {
         #expect(again.record(Record.Key(collection: "test.mark", id: "1"))?["title"] == "T")
     }
 
+    @Test func aChangeHereBringsARecordRemovedElsewhereBackWhole() throws {
+        kinds()
+        let a = try Journal(path: nil, device: "a"), b = try Journal(path: nil, device: "b")
+        let fields: [String: Value] = ["title": "One", "url": "https://one.test/"]
+        try a.reconcile("test.mark", ["1": fields], shown: true)
+        _ = try b.receive(a.pending().map { ($0.record, 1) })
+        try b.reconcile("test.mark", ["1": fields], shown: true)
+        // Removed on b; a's files still hold it, unchanged: no edit.
+        try b.reconcile("test.mark", [:], shown: true)
+        _ = try a.receive(b.pending().map { ($0.record, 2) })
+        #expect(try a.reconcile("test.mark", ["1": fields], shown: true).isEmpty)
+        // Then a changes one field: it comes back with all of them.
+        var changed = fields
+        changed["title"] = "One again"
+        #expect(try a.reconcile("test.mark", ["1": changed], shown: true).count == 1)
+        let back = try #require(a.record(Record.Key(collection: "test.mark", id: "1")))
+        #expect(back.alive())
+        #expect(back["url"] == "https://one.test/" && back["title"] == "One again")
+    }
+
+    @Test func aRemovalThatNowSaysWhyReachesTheMirrorAndAnEmptiedOneDoesNot() throws {
+        kinds()
+        let a = try Journal(path: nil, device: "a"), b = try Journal(path: nil, device: "b")
+        try a.reconcile("test.mark", ["1": ["title": "One"]])
+        _ = try b.receive(a.pending().map { ($0.record, 1) })
+        try a.reconcile("test.mark", [:])
+        _ = try b.receive(a.pending().map { ($0.record, 2) })
+        // Marked, then removed again, as a visit deleted by hand is.
+        try a.reconcile("test.mark", ["1": ["title": "One", "cut": 5]])
+        try a.reconcile("test.mark", [:])
+        let told = try b.receive(a.pending().map { ($0.record, 3) })
+        #expect(told.map(\.id) == ["1"] && told.first?.alive() == false && told.first?.fields["cut"] == 5)
+        // Emptied after its removal: nothing for the mirror.
+        #expect(try a.blankRemoved("test.mark") == 1)
+        #expect(try b.receive(a.pending().map { ($0.record, 4) }).isEmpty)
+    }
+
     @Test func aStampTakenForAChangeOutsideTheJournalSurvivesARelaunch() throws {
         kinds()
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("sync-\(UUID()).sqlite").path

@@ -54,11 +54,12 @@ enum SyncShapes {
     /// marked with when, for the flush to tell before it removes them: a
     /// removal alone also means a place left the two weeks or this Mac
     /// stopped syncing history, which the other devices must not follow.
-    /// Only places no longer in `now` and still alive in the journal.
+    /// Only places no longer in `now`. One already removed (another Mac
+    /// stopped syncing history) is cut too, or the others keep it.
     static func cut(_ cuts: [String: Date], in journal: Journal, keeping now: Collection) -> Collection {
         var out: Collection = [:]
         for (key, at) in cuts where now[key] == nil {
-            guard let record = journal.record(.init(collection: visit, id: key)), record.alive() else { continue }
+            guard let record = journal.record(.init(collection: visit, id: key)) else { continue }
             var fields = record.visible
             fields["cut"] = .number(at.timeIntervalSince1970.rounded(.down))
             out[key] = fields

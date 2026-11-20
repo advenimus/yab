@@ -177,6 +177,50 @@ struct HistorySyncTests {
         #expect(b.visits(since: .distantPast).count == 2)
     }
 
+    /// Three Macs holding the same two places; Mac A then turns history
+    /// sync off, which takes them out of the account. B and C keep theirs.
+    static func threeMacsAfterOneStopped() throws -> (b: History, macB: Journal, c: History, macC: Journal) {
+        let (a, macA, b, macB) = try twoMacs()
+        _ = a
+        let c = History([gone, kept])
+        let macC = try Journal(path: nil, device: "history-c")
+        _ = try macC.receive(macA.all(SyncShapes.visit).map { ($0, Int64(1)) })
+        try flush(c, into: macC)
+        try SyncShapes.reconcileVisits(macA, [:], cuts: [:])
+        let removal = macA.pending().map { ($0.record, Int64(3)) }
+        for (history, journal) in [(b, macB), (c, macC)] {
+            let received = try journal.receive(removal)
+            history.adoptSynced(SyncShapes.visits(from: received))
+            history.dropSynced(SyncShapes.cutVisits(from: received))
+            try flush(history, into: journal)
+            #expect(journal.pendingCount == 0)
+            #expect(history.visits(since: .distantPast).count == 2)
+        }
+        return (b, macB, c, macC)
+    }
+
+    @Test func aPlaceVisitedAgainAfterAnotherMacStoppedGoesUpWhole() throws {
+        let (b, macB, _, _) = try Self.threeMacsAfterOneStopped()
+        let url = URL(string: Self.kept.url)!
+        b.record(url, title: Self.kept.title)
+        try Self.flush(b, into: macB)
+        let record = try #require(macB.record(.init(collection: SyncShapes.visit, id: Self.kept.key)))
+        #expect(record.alive())
+        let visit = try #require(SyncVisit(record))
+        #expect(visit.url == Self.kept.url)
+        #expect(visit.title == Self.kept.title)
+    }
+
+    @Test func aPageDeletedAfterAnotherMacStoppedStillGoesFromTheThird() throws {
+        let (b, macB, c, macC) = try Self.threeMacsAfterOneStopped()
+        b.forget(Self.gone.key)
+        try Self.flush(b, into: macB)
+        let received = try macC.receive(macB.pending().map { ($0.record, Int64(4)) })
+        let dropped = c.dropSynced(SyncShapes.cutVisits(from: received))
+        #expect(dropped.map(\.absoluteString) == [Self.gone.url])
+        #expect(c.visits(since: .distantPast).map(\.key) == [Self.kept.key])
+    }
+
     @Test func aPageVisitedAgainSinceTheDeleteStays() throws {
         let (a, macA, b, macB) = try Self.twoMacs()
         a.forget(Self.gone.key)
