@@ -69,6 +69,41 @@ final class CrashSessionLedger: @unchecked Sendable {
         }
     }
 
+    /// How old the marker's observation may grow while nothing else in the
+    /// run changes: the exit is looked for up to two minutes after it
+    /// (CrashExitLogs.read). Under the slowest look's minute, so a look a
+    /// moment early still writes.
+    static let beat: TimeInterval = 45
+
+    /// The heartbeat: written when the run reads differently, or when what
+    /// the marker says was last observed is a beat old. Every observation
+    /// rewrote the file, four times a minute all day, with the same numbers.
+    func observe(at: Date, _ change: @escaping @Sendable (inout Run) -> Void) {
+        queue.async { [self] in
+            guard let was = current else { return }
+            var run = was
+            change(&run)
+            run.observed = at
+            guard at.timeIntervalSince(was.observed) >= Self.beat || !Self.same(run, was) else { return }
+            do {
+                try write(run, to: marker)
+                current = run
+            } catch { NSLog("Crashes: session observation could not be saved: %@", String(describing: error)) }
+        }
+    }
+
+    /// Memory moving this much is news, for an exit that ran out of it.
+    static let memoryNews: UInt64 = 512 << 20
+
+    /// The same run apart from the clock, and memory moving less than `memoryNews`.
+    static func same(_ a: Run, _ b: Run) -> Bool {
+        let was = a.memoryBytes ?? 0, now = b.memoryBytes ?? 0
+        guard (was > now ? was - now : now - was) < memoryNews else { return false }
+        var a = a
+        a.observed = b.observed; a.uptime = b.uptime; a.memoryBytes = b.memoryBytes
+        return a == b
+    }
+
     /// Serialized after every queued observation, so none can recreate the
     /// marker after a clean quit. Used at the end of applicationWillTerminate.
     func finish() throws {
@@ -191,11 +226,15 @@ enum CrashExitLogs {
         }
     }
 
+    /// How long after the marker's last observation the exit is looked for:
+    /// two minutes after the last look, which the marker may be a beat behind.
+    static let afterObservation: TimeInterval = 120 + CrashSessionLedger.beat
+
     static func read(_ run: CrashSessionLedger.Run, now: Date = Date()) -> Result {
         // The heartbeat bounds the unknown exit to shortly after the last
         // observation. This is explicitly an observation window, not exit time.
         let from = run.observed.addingTimeInterval(-180)
-        let through = min(now, run.observed.addingTimeInterval(120))
+        let through = min(now, run.observed.addingTimeInterval(afterObservation))
         do {
             let store = try OSLogStore(scope: .system)
             let predicate = NSPredicate(format: "date >= %@ AND date <= %@ AND (processIdentifier IN %@ OR process IN %@)",
@@ -243,6 +282,31 @@ enum CrashSessions {
     private static var timer: Timer?
     private static var memorySource: DispatchSourceMemoryPressure?
     private static var began: TimeInterval = 0
+    private static var watches: [NSObjectProtocol] = []
+
+    /// How often the run is looked at: every 15 seconds while Yab is in
+    /// front, every minute behind other apps. Both well inside the two
+    /// minutes after the last observation the exit is looked for in.
+    static func every(active: Bool) -> TimeInterval { active ? 15 : 60 }
+
+    /// The next look, one at a time. Yab coming forward only brings it
+    /// sooner: switching apps back and forth never puts it off.
+    private static func tick(active: Bool) {
+        let at = Date().addingTimeInterval(every(active: active))
+        if let timer, timer.isValid, timer.fireDate <= at { return }
+        timer?.invalidate()
+        let next = Timer(fire: at, interval: 0, repeats: false) { fired in
+            // Crash #1010: assumeIsolated faults in executor lookup in a timer.
+            AppKitMainThread.sync {
+                guard timer === fired else { return }
+                timer = nil
+                tick(active: NSApp?.isActive == true)
+                observe()
+            }
+        }
+        RunLoop.main.add(next, forMode: .common)
+        timer = next
+    }
 
     static func start() {
         guard !Store.unitTests, timer == nil else { return }
@@ -252,9 +316,13 @@ enum CrashSessions {
                                          build: Updater.build, os: Updater.system, pid: getpid(), processIDs: [getpid()])
         do { try ledger.begin(run) }
         catch { NSLog("Crashes: session marker could not be created: %@", String(describing: error)) }
-        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
-            Task { @MainActor in observe() }
-        }
+        tick(active: NSApp?.isActive == true)
+        let center = NotificationCenter.default
+        watches = [
+            center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { if timer != nil { tick(active: true) } }
+            },
+        ]
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .main)
         source.setEventHandler {
             MainActor.assumeIsolated {
@@ -279,8 +347,8 @@ enum CrashSessions {
         }
         let tabs = state.tabs, windows = state.windows, asleep = state.asleepTabs
         let memory = state.memory.sample?.yabFootprintBytes
-        ledger.update { run in
-            run.observed = at; run.uptime = uptime; run.tabs = tabs; run.windows = windows
+        ledger.observe(at: at) { run in
+            run.uptime = uptime; run.tabs = tabs; run.windows = windows
             run.asleepTabs = asleep; run.extensions = extensions
             run.processIDs = Array(Set(run.deaths.compactMap(\.pid)).union(ids)).sorted()
             run.memoryBytes = memory
@@ -299,6 +367,8 @@ enum CrashSessions {
 
     static func finish() {
         timer?.invalidate(); timer = nil
+        for watch in watches { NotificationCenter.default.removeObserver(watch) }
+        watches = []
         memorySource?.cancel(); memorySource = nil
         do { try ledger.finish() }
         catch { NSLog("Crashes: clean-quit marker could not be cleared: %@", String(describing: error)) }
