@@ -90,6 +90,12 @@ struct HistorySyncTests {
         #expect(adopted.url == newer.absoluteString)
         #expect(adopted.title == "b - Google Search")
         #expect(adopted.count == local.count)
+        // A newer one with no title yet keeps the address its title is for.
+        history.adoptSynced([(URL(string: "https://www.google.com/search?q=d")!, "", Date(timeIntervalSince1970: 3_000), false)])
+        let untitled = try #require(history.visits(since: .distantPast).first)
+        #expect(untitled.url == newer.absoluteString)
+        #expect(untitled.title == "b - Google Search")
+        #expect(untitled.last == Date(timeIntervalSince1970: 3_000))
     }
 
     @Test func aNewRemotePlaceIsOneVisitEvenAfterRepeatedReceives() throws {

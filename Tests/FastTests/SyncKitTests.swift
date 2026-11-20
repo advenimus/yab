@@ -301,6 +301,22 @@ struct SyncKitTests {
         #expect(again.record(Record.Key(collection: "test.mark", id: "1"))?["title"] == "T")
     }
 
+    @Test func aStampTakenForAChangeOutsideTheJournalSurvivesARelaunch() throws {
+        kinds()
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("sync-\(UUID()).sqlite").path
+        defer { for end in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + end) } }
+        var stamp: Stamp?
+        do {
+            let j = try Journal(path: path, device: "a")
+            try j.change(Record.Key(collection: "test.mark", id: "1"), ["title": "T"])
+            // A clear's fence (ContextPrivacy), with no record changed after it.
+            stamp = j.tick()
+        }
+        let again = try Journal(path: path, device: "a")
+        #expect(again.clock.latest == stamp)
+        #expect(again.clock.tick() > stamp!)
+    }
+
     @Test func aReconcileThatChangesNothingWritesNothing() throws {
         kinds()
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("sync-\(UUID()).sqlite").path

@@ -374,8 +374,9 @@ enum Wallet {
         facts["code"] = (3...4).contains(code.count)
         var record = ["number": digits]
         if (3...4).contains(code.count) { record["csc"] = code }
-        guard let secret = try? JSONSerialization.data(withJSONObject: record),
-              let generic = try? JSONSerialization.data(withJSONObject: facts)
+        // Sorted, so the same card is the same bytes on every Mac (sync compares its secret as they are).
+        guard let secret = try? JSONSerialization.data(withJSONObject: record, options: .sortedKeys),
+              let generic = try? JSONSerialization.data(withJSONObject: facts, options: .sortedKeys)
         else { return false }
         return write(.card, card.id, secret: secret, generic: generic)
     }

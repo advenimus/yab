@@ -215,6 +215,41 @@ struct SyncQuietTests {
         #expect(written.flatMap { try? JSONDecoder().decode(MemberStamp.Info.self, from: $0) } == info)
     }
 
+    @Test func quickActionsWriteTheirSetsSorted() throws {
+        var personalized = Set<String>(minimumCapacity: 97), dismissed = Set<String>(minimumCapacity: 3)
+        for id in ["mail", "calendar", "drive", "maps", "news", "photos", "translate"] { personalized.insert(id); dismissed.insert(id + ".off") }
+        let saved = QuickActions.Saved(actions: [], personalized: personalized, dismissed: dismissed, made: nil, hinted: ["mail": 2])
+        let json = try JSONDecoder().decode(Value.self, from: JSONEncoder().encode(saved))
+        #expect(json.object?["personalized"]?.array?.compactMap(\.string) == personalized.sorted())
+        #expect(json.object?["dismissed"]?.array?.compactMap(\.string) == dismissed.sorted())
+        let back = try JSONDecoder().decode(QuickActions.Saved.self, from: JSONEncoder().encode(saved))
+        #expect(back.personalized == personalized && back.dismissed == dismissed && back.hinted == ["mail": 2])
+    }
+
+    @Test func aFieldTakenInReviewIsAChangeMadeHere() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("profile-review-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("profile.json")
+        var mine = Profile()
+        mine.headline = "Before"
+        mine.updated = Date(timeIntervalSince1970: 1_790_000_000)
+        #expect(Profile.saveSynced(mine, to: file))
+        let domain = "profile-review-" + UUID().uuidString
+        let settings = UserDefaults(suiteName: domain)!
+        defer { settings.removePersistentDomain(forName: domain) }
+        var stores = ContextPrivacy.Stores()
+        stores.profile = { Profile.load(from: file) }
+        stores.saveProfile = { Profile.save($0, origin: .usage, to: file) }
+        stores.saveSyncedProfile = { Profile.saveSynced($0, to: file) }
+        let privacy = ContextPrivacy(root: folder, settings: settings, storage: MemoryContextJournal(), stores: stores)
+        let before = Date()
+        #expect(privacy.applyReviewedProfile("headline", value: .init(value: "After"), expected: Profile.cells(mine)["headline"], epoch: privacy.epoch))
+        let now = Profile.load(from: file)
+        #expect(now.headline == "After")
+        #expect((now.updated ?? .distantPast) >= before.addingTimeInterval(-1))
+    }
+
     // MARK: visits
 
     @Test func oneSearchPlaceGoesQuietWhenEachMacSearchedSomethingElse() throws {

@@ -750,6 +750,16 @@ public final class Journal: @unchecked Sendable {
         if let restorationError { throw restorationError }
     }
 
+    /// A stamp for a change made outside the journal, written down at
+    /// once: the next launch's clock starts after it.
+    public func tick() -> Stamp {
+        queue.sync {
+            let stamp = clock.tick()
+            persistClock()
+            return stamp
+        }
+    }
+
     public func remove(_ key: Record.Key) throws {
         try queue.sync {
             guard let had = load(key), had.record.alive() else { return }

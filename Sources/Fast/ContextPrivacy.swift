@@ -300,7 +300,7 @@ final class ContextPrivacy: @unchecked Sendable {
             guard before[key] == expected else { return false }
             next[key] = value.value; next.sources[key] = value.source
             if value.edited { next.edited.insert(key) } else { next.edited.remove(key) }
-            return mutate(resource: "profile", before: before, after: Profile.cells(next), origin: .sync(epoch)) { stores.saveSyncedProfile(next) }
+            return mutate(resource: "profile", before: before, after: Profile.cells(next), origin: .sync(epoch)) { stores.saveProfile(next) }
         }
     }
 
@@ -328,9 +328,12 @@ final class ContextPrivacy: @unchecked Sendable {
                 next[key] = current[key]; next.sources[key] = current.sources[key]
                 if current.edited.contains(key) { next.edited.insert(key) } else { next.edited.remove(key) }
             }
-            // This Mac's own profile come back: nothing to write.
+            // This Mac's own profile come back: nothing to write. One that
+            // keeps some of this Mac's values is a change made here.
             if next == current { return true }
-            return mutate(resource: "profile", before: Profile.cells(current), after: Profile.cells(next), origin: .sync(epoch)) { stores.saveSyncedProfile(next) }
+            return mutate(resource: "profile", before: Profile.cells(current), after: Profile.cells(next), origin: .sync(epoch)) {
+                next == incoming ? stores.saveSyncedProfile(next) : stores.saveProfile(next)
+            }
         }
     }
 
@@ -463,7 +466,7 @@ final class ContextPrivacy: @unchecked Sendable {
             // A decision to restore one version belongs to the context
             // being cleared. It cannot authorize replay after this clear.
             journal.acceptedSync = [:]
-            let cutoff = syncJournal?.clock.tick() ?? Stamp(wall: 0, device: "local-context")
+            let cutoff = syncJournal?.tick() ?? Stamp(wall: 0, device: "local-context")
             for id in Array(journal.fields.filter { $0.value.learned }.keys) + plan.legacy.filter({ choices[$0.id] != .keep }).map(\.id) + ["memory", "know.json"] { journal.tombstones[id] = cutoff }
             guard persist() else { journal = previous; result.unresolved = ["Could not protect the clear operation. Try again."]; return result }
             let recovery = journal
