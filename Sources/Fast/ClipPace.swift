@@ -4,8 +4,8 @@ import AppKit
 /// the Mac; every five once nobody has touched it for a minute, a copy then
 /// coming from a script or another device; while the screen is locked, only
 /// at the lock itself, every half minute. Back to every second, with a look at once, the moment anyone
-/// comes back: Yab or another app brought forward, the screen unlocked, the
-/// Mac awake. A copy made meanwhile is still caught, the pasteboard's count
+/// comes back: Yab or another app brought forward, a key or a click in Yab,
+/// the screen unlocked, the Mac awake. A copy made meanwhile is still caught, the pasteboard's count
 /// having moved.
 @MainActor
 final class ClipPace {
@@ -27,6 +27,7 @@ final class ClipPace {
     private(set) var timer: Timer?
     private(set) var locked = false
     private var watches: [(NotificationCenter, NSObjectProtocol)] = []
+    private var press: Any?
 
     /// `steady`: a test world's own pace (YAB_CLIPS_EVERY, or every second),
     /// kept whatever the Mac: an eval Mac nobody touches, its screen locked.
@@ -44,7 +45,7 @@ final class ClipPace {
     }
 
     func start() {
-        guard timer == nil, watches.isEmpty else { return }
+        guard timer == nil, watches.isEmpty, press == nil else { return }
         locked = lockedNow()
         let workspace = NSWorkspace.shared.notificationCenter, local = NotificationCenter.default
         let distributed = DistributedNotificationCenter.default()
@@ -59,6 +60,10 @@ final class ClipPace {
         on(workspace, NSWorkspace.didWakeNotification) { $0.wake() }
         on(distributed, .init("com.apple.screenIsLocked")) { $0.lock() }
         on(distributed, .init("com.apple.screenIsUnlocked")) { $0.unlock() }
+        press = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]) { [weak self] event in
+            MainActor.assumeIsolated { self?.pressed() }
+            return event
+        }
         pace()
     }
 
@@ -67,6 +72,8 @@ final class ClipPace {
         timer?.invalidate(); timer = nil
         for (center, token) in watches { center.removeObserver(token) }
         watches = []
+        if let press { NSEvent.removeMonitor(press) }
+        press = nil
     }
 
     /// Someone is back: a look now, and the quick pace again.
@@ -91,6 +98,15 @@ final class ClipPace {
         locked = false
         look()
         pace(quiet: 0)
+    }
+
+    /// A key or a click in Yab while the look is slow: someone is there,
+    /// maybe copying. A look now and the quick pace again, so a copy, a
+    /// private window's too, is taken with the window and app it was made in,
+    /// not one switched to while the slow look waited.
+    func pressed() {
+        guard steady == nil, timer?.timeInterval != Self.quick else { return }
+        wake()
     }
 
     /// One tick: a look, then the pace for whoever is there now.

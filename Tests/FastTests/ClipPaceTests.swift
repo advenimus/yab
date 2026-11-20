@@ -42,6 +42,23 @@ struct ClipPaceTests {
         #expect(looks == 4 && pace.timer?.timeInterval == 1)
     }
 
+    @Test func aPressInYabWhileNobodyWasThereLooksAtOnce() {
+        var quiet: TimeInterval = 120, looks = 0
+        let pace = ClipPace(quiet: { quiet }, locked: { false }, look: { looks += 1 })
+        pace.start()
+        defer { pace.stop() }
+        #expect(pace.timer?.timeInterval == ClipPace.away)
+        // A selection and its copy in Yab, a private window's too: looked at
+        // now and every second after, so the copy is taken with the window
+        // and app it was made in, not one switched to in the slow look's wait.
+        quiet = 0
+        pace.pressed()
+        #expect(looks == 1 && pace.timer?.timeInterval == ClipPace.quick)
+        // At the quick pace a press adds no look.
+        pace.pressed()
+        #expect(looks == 1)
+    }
+
     @Test func aScreenLockedAtLaunchIsNotLookedAt() {
         var looks = 0, screen = true
         let pace = ClipPace(quiet: { 0 }, locked: { screen }, look: { looks += 1 })
