@@ -327,7 +327,11 @@ final class Tab: ObservableObject, Identifiable, Relaying {
     /// own a second page and never construct a WebKit page for another engine.
     var built: PageView? { builtPage?.webKit }
     @ObservationIgnored private(set) var builtPage: (any PageHandle)? {
-        didSet { ChromiumTabGroups.shared.changed() }
+        didSet {
+            ChromiumTabGroups.shared.changed()
+            // A code card's "Fill on" button needs the page waiting for it.
+            if waitingCode != nil, (oldValue == nil) != (builtPage == nil) { MailCodeState.boxMoved() }
+        }
     }
     /// Chromium keeps its browser/controller while the renderer is discarded.
     @ObservationIgnored private var sleepingChromium: ChromiumPage?
@@ -2645,7 +2649,12 @@ final class Tab: ObservableObject, Identifiable, Relaying {
         let request: CodeRequest
         let address: URL
     }
-    @ObservationIgnored var waitingCode: WaitingCode?
+    @ObservationIgnored var waitingCode: WaitingCode? {
+        didSet { if Self.codeBoxMoves(from: oldValue, to: waitingCode) { MailCodeState.boxMoved() } }
+    }
+
+    /// Nil to nil, which Forms sets on every field message, moves nothing.
+    nonisolated static func codeBoxMoves(from old: WaitingCode?, to new: WaitingCode?) -> Bool { old != nil || new != nil }
     @ObservationIgnored var fieldCode = false
     @ObservationIgnored var fieldCodeRequest = CodeRequest()
     /// Where that box last was, in points, for a list that comes up later
