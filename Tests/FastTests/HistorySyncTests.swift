@@ -78,6 +78,20 @@ struct HistorySyncTests {
         #expect(adopted.typed == local.typed)
     }
 
+    @Test func aNewerVisitElsewhereBringsItsAddressWithItsTitle() throws {
+        let local = Visit(url: "https://www.google.com/search?q=a", key: "google.com/search", title: "a - Google Search", count: 3,
+                          last: Date(timeIntervalSince1970: 1_000), typed: nil)
+        let history = History([local])
+        let newer = URL(string: "https://www.google.com/search?q=b")!
+        history.adoptSynced([(URL(string: "https://www.google.com/search?q=c")!, "c - Google Search", Date(timeIntervalSince1970: 500), false)])
+        #expect(history.visits(since: .distantPast).first?.url == local.url)
+        history.adoptSynced([(newer, "b - Google Search", Date(timeIntervalSince1970: 2_000), false)])
+        let adopted = try #require(history.visits(since: .distantPast).first)
+        #expect(adopted.url == newer.absoluteString)
+        #expect(adopted.title == "b - Google Search")
+        #expect(adopted.count == local.count)
+    }
+
     @Test func aNewRemotePlaceIsOneVisitEvenAfterRepeatedReceives() throws {
         let url = URL(string: "https://history.test/new")!
         let history = History([])
@@ -103,21 +117,18 @@ struct HistorySyncTests {
         let a = History([gone, kept])
         let b = History([gone, kept])
         let macA = try Journal(path: nil, device: "history-a")
-        try macA.reconcile(SyncShapes.visit, SyncShapes.visits([gone, kept]))
+        try SyncShapes.reconcileVisits(macA, SyncShapes.visits([gone, kept]), cuts: [:])
         let first = macA.pending().map { ($0.record, Int64(1)) }
         try macA.sent(first)
         let macB = try Journal(path: nil, device: "history-b")
         _ = try macB.receive(first)
-        try macB.reconcile(SyncShapes.visit, SyncShapes.visits(b.visits(since: .distantPast)))
+        try flush(b, into: macB)
         return (a, macA, b, macB)
     }
 
     /// What SyncCenter's flush does with Mac A's history and its cuts.
     static func flush(_ history: History, into journal: Journal) throws {
-        let now = SyncShapes.visits(history.visits(since: .distantPast))
-        let cut = SyncShapes.cut(history.takeCuts(), in: journal, keeping: now)
-        if !cut.isEmpty { try journal.reconcile(SyncShapes.visit, now.merging(cut) { mine, _ in mine }) }
-        try journal.reconcile(SyncShapes.visit, now)
+        try SyncShapes.reconcileVisits(journal, SyncShapes.visits(history.visits(since: .distantPast)), cuts: history.takeCuts())
     }
 
     @Test func aPageDeletedOnOneMacGoesFromTheOtherAndDoesNotComeBack() throws {
@@ -152,7 +163,7 @@ struct HistorySyncTests {
         let (_, macA, b, macB) = try Self.twoMacs()
         // Mac A's flush without the places, nothing deleted by hand: as when
         // they leave the two weeks or history sync is turned off there.
-        try macA.reconcile(SyncShapes.visit, [:])
+        try SyncShapes.reconcileVisits(macA, [:], cuts: [:])
         let received = try macB.receive(macA.pending().map { ($0.record, Int64(2)) })
         #expect(received.count == 2)
         #expect(SyncShapes.cutVisits(from: received).isEmpty)
@@ -183,7 +194,7 @@ struct HistorySyncTests {
         a.adoptSynced([(URL(string: again.url)!, again.title, again.last, false)])
         try Self.flush(a, into: macA)
         // Then gone from the two weeks: a removal, no new cut.
-        try macA.reconcile(SyncShapes.visit, [:])
+        try SyncShapes.reconcileVisits(macA, [:], cuts: [:])
         let records = macA.all(SyncShapes.visit)
         #expect(records.allSatisfy { !$0.alive() })
         #expect(SyncShapes.cutVisits(from: records).isEmpty)

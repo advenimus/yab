@@ -993,6 +993,8 @@ final class History: ObservableObject {
                 let takeTyped = place.typed && (seen.typed ?? 0) < 1
                 guard newer || takeTitle || takeTyped else { continue }
                 seen.last = max(seen.last, place.last)
+                // The newer visit's address goes with its title, as a visit here takes its own.
+                if newer { seen.url = place.url.absoluteString }
                 if takeTitle { seen.title = place.title }
                 if takeTyped { seen.typed = 1 }
                 all[key] = seen

@@ -66,6 +66,19 @@ enum SyncShapes {
         return out
     }
 
+    /// This Mac's places told to the journal. Deleted by hand: marked
+    /// first, then removed, so the other devices tell it from a place that
+    /// only left the two weeks. Three-way (Journal.reconcile's `shown`):
+    /// a place goes up when it changed here, not because this Mac's copy
+    /// differs from the record. Two Macs that last searched different
+    /// things under one key (google.com/search) each sent theirs back on
+    /// every flush, forever.
+    static func reconcileVisits(_ journal: Journal, _ now: Collection, cuts: [String: Date]) throws {
+        let cut = cut(cuts, in: journal, keeping: now)
+        if !cut.isEmpty { try journal.reconcile(visit, now.merging(cut) { mine, _ in mine }, shown: true) }
+        try journal.reconcile(visit, now, shown: true)
+    }
+
     /// Places deleted by hand on another device, by key and when: a removed
     /// record whose last change before the removal was its cut. One cut
     /// once, visited again since and gone out of the two weeks, is not.
@@ -253,6 +266,13 @@ enum SyncShapes {
             out[path] = ["json": json]
         }
         return out
+    }
+
+    /// The profile a `profile.json` record carries, as its file reads.
+    static func profile(from record: SyncKit.Record) -> Profile? {
+        guard let json = record["json"], let data = try? JSONEncoder().encode(json) else { return nil }
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(Profile.self, from: data)
     }
 
     /// Pictures you gave tabs and folders (custom-icons/), each one whole.

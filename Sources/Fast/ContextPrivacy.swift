@@ -132,6 +132,7 @@ final class ContextPrivacy: @unchecked Sendable {
     struct Stores {
         var profile: () -> Profile = { Profile.load() }
         var saveProfile: (Profile) -> Bool = { Profile.save($0, origin: .usage) }
+        var saveSyncedProfile: (Profile) -> Bool = { Profile.saveSynced($0) }
         var addresses: () -> [StreetAddress] = { Wallet.addresses() }
         var saveAddress: (StreetAddress) -> Bool = { Wallet.save($0, origin: .usage) }
         var removeAddress: (String) -> Bool = { id in Wallet.forget(address: id); return !Wallet.addresses().contains { $0.id == id } }
@@ -299,7 +300,7 @@ final class ContextPrivacy: @unchecked Sendable {
             guard before[key] == expected else { return false }
             next[key] = value.value; next.sources[key] = value.source
             if value.edited { next.edited.insert(key) } else { next.edited.remove(key) }
-            return mutate(resource: "profile", before: before, after: Profile.cells(next), origin: .sync(epoch)) { stores.saveProfile(next) }
+            return mutate(resource: "profile", before: before, after: Profile.cells(next), origin: .sync(epoch)) { stores.saveSyncedProfile(next) }
         }
     }
 
@@ -327,7 +328,9 @@ final class ContextPrivacy: @unchecked Sendable {
                 next[key] = current[key]; next.sources[key] = current.sources[key]
                 if current.edited.contains(key) { next.edited.insert(key) } else { next.edited.remove(key) }
             }
-            return mutate(resource: "profile", before: Profile.cells(current), after: Profile.cells(next), origin: .sync(epoch)) { stores.saveProfile(next) }
+            // This Mac's own profile come back: nothing to write.
+            if next == current { return true }
+            return mutate(resource: "profile", before: Profile.cells(current), after: Profile.cells(next), origin: .sync(epoch)) { stores.saveSyncedProfile(next) }
         }
     }
 
