@@ -466,10 +466,6 @@ final class ChromiumPage: YabTextCheckingView, PageHandle, PageAudioControl {
             }
         }
     }
-    /// In the page's own queue, so a wake-up goes ahead of what its call sends next.
-    func queueFrames(_ operation: @escaping @MainActor (YabCoreClient, String) async throws -> Void) {
-        enqueue(request: "tab.frames", operation)
-    }
     func command(_ method: String, _ params: [String: JSONValue] = [:]) {
         enqueue(navigation: ["tab.reload", "tab.back", "tab.forward", "history.go", "tab.restore"].contains(method), request: method) { core, id in
             var p = params; p["tab"] = .string(id)

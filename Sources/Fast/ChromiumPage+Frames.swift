@@ -8,6 +8,8 @@ final class ChromiumFrames {
     struct Sent: Equatable { let remote: String; let helper: UUID; let interval: Int }
     var resting = false
     var sent: Sent?
+    var turn = 0
+    var sending: Task<Void, Never>?
 
     /// What to send now, or nothing. A helper without CEF 0137 is never sent
     /// anything, and a page it has just made draws at the display's rate.
@@ -26,7 +28,7 @@ final class ChromiumFrames {
 /// the main display: 240 a second on a 240 Hz monitor, where an animated page
 /// there cost its GPU process 37% of a core, its renderer 18% and the window
 /// server 14% (2026-11-19). A call that names the page, or the stage taking
-/// it, brings it back to the display's rate before anything else is sent.
+/// it, brings it back to the display's rate at once.
 extension ChromiumPage: PageFramePace {
     nonisolated static let restingInterval = 33
 
@@ -38,8 +40,7 @@ extension ChromiumPage: PageFramePace {
 
     var restsFrames: Bool {
         get { frames.resting }
-        // Sent only when it changes (ChromiumFrames.next), so asking each time
-        // the bench looks again also sends what a failed request didn't.
+        // Sent only when it changes (ChromiumFrames.next).
         set {
             frames.resting = newValue
             paceFrames()
@@ -47,24 +48,28 @@ extension ChromiumPage: PageFramePace {
     }
 
     /// A new page in the helper draws at the display's rate until told
-    /// otherwise; one told nothing yet is told only to slow down. A request
-    /// that fails leaves what was sent before, and the bench's next call,
-    /// or a change of stage or room, sends again.
+    /// otherwise; one told nothing yet is told only to slow down. Sent
+    /// straight to the helper, not behind the page's own queue: a page taken
+    /// to the stage must not wait on a script still running there. One
+    /// request at a time, and only the newest, so a slow-down sent late can't
+    /// undo a wake-up. A request that fails counts as sent: the next change
+    /// of call, stage or room asks again, not every call in between.
     func paceFrames() {
-        guard let remote = remoteID, !retired, ChromiumProcess.shared.connectedClient != nil else { return }
+        guard let remote = remoteID, !retired, let core = ChromiumProcess.shared.connectedClient else { return }
         let interval = Self.frameInterval(resting: frames.resting, inRoom: window?.identifier == Bench.roomID,
                                           pictureInPicture: videoPiP != nil)
         guard let sent = ChromiumFrames.next(interval: interval, capable: ChromiumProcess.shared.pacesFrames, remote: remote,
                                              helper: ChromiumProcess.shared.connectionGeneration, sent: frames.sent) else { return }
-        let before = frames.sent
         frames.sent = sent
-        queueFrames { [weak self] core, id in
-            guard id == remote else { return }
+        frames.turn &+= 1
+        let turn = frames.turn, previous = frames.sending
+        frames.sending = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self, self.frames.turn == turn, ChromiumProcess.shared.isCurrent(core) else { return }
             do {
-                _ = try await core.request("tab.frames", params: ["tab": .string(id), "interval": .number(Double(interval))])
+                _ = try await core.request("tab.frames", params: ["tab": .string(remote), "interval": .number(Double(interval))])
             } catch {
                 DebugLog.note("chromium.frames", ["error": error.localizedDescription, "interval": interval])
-                if let self, self.frames.sent == sent { self.frames.sent = before }
             }
         }
     }

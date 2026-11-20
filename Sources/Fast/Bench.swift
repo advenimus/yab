@@ -625,7 +625,8 @@ final class Bench {
            let refusal = Agents.shared.stoppedOnTab(tab, session: request["session"] as? String) {
             answer(["error": refusal]); return
         }
-        // Past the refusals above: a call turned away wakes nothing.
+        // Past the bench's own refusals above, so a call they turn away wakes
+        // nothing; one its verb's handler refuses wakes the page until it answers.
         if let tab = find(request, in: browser) { call.names(tab) }
         if Bench.forAgents(verb) {
             agentCommand(verb, request, browser: browser, answer)

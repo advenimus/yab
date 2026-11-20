@@ -128,3 +128,57 @@
  
    // CefBrowser methods:
    bool IsValid() override;
+--- a/components/viz/host/host_frame_sink_manager.cc
++++ b/components/viz/host/host_frame_sink_manager.cc
+@@ -454,15 +454,19 @@ void HostFrameSinkManager::InvalidateCopyOutputReadyCallback(
+ 
+ void HostFrameSinkManager::Throttle(const std::vector<FrameSinkId>& ids,
+                                     base::TimeDelta interval) {
++  throttled_ids_ = ids;
++  throttle_interval_ = interval;
+   frame_sink_manager_->Throttle(ids, interval);
+ }
+ 
+ void HostFrameSinkManager::StartThrottlingAllFrameSinks(
+     base::TimeDelta interval) {
++  global_throttle_interval_ = interval;
+   frame_sink_manager_->StartThrottlingAllFrameSinks(interval);
+ }
+ 
+ void HostFrameSinkManager::StopThrottlingAllFrameSinks() {
++  global_throttle_interval_.reset();
+   frame_sink_manager_->StopThrottlingAllFrameSinks();
+ }
+ 
+@@ -550,6 +554,15 @@ void HostFrameSinkManager::RegisterAfterConnectionLoss() {
+   for (const auto& map_entry : non_empty_frame_callbacks_) {
+     frame_sink_manager_->RequestNonEmptyFrameNotification(map_entry.first);
+   }
++
++  // Throttling last, once the hierarchy it reaches down is registered.
++  if (!throttled_ids_.empty()) {
++    frame_sink_manager_->Throttle(throttled_ids_, throttle_interval_);
++  }
++  if (global_throttle_interval_) {
++    frame_sink_manager_->StartThrottlingAllFrameSinks(
++        *global_throttle_interval_);
++  }
+ }
+ 
+ void HostFrameSinkManager::OnFirstSurfaceActivation(
+--- a/components/viz/host/host_frame_sink_manager.h
++++ b/components/viz/host/host_frame_sink_manager.h
+@@ -487,6 +487,13 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
+   // from inside a container mutation.
+   base::flat_map<FrameSinkId, base::OnceClosure> non_empty_frame_callbacks_;
+ 
++  // The last throttling asked for, sent again to a new Viz instance: a GPU
++  // process that restarted would otherwise draw every throttled sink at the
++  // display's rate until the next Throttle() call (Yab, CEF 0137).
++  std::vector<FrameSinkId> throttled_ids_;
++  base::TimeDelta throttle_interval_;
++  std::optional<base::TimeDelta> global_throttle_interval_;
++
+   // If |frame_sink_manager_remote_| connection was lost.
+   bool connection_was_lost_ = false;
+ 

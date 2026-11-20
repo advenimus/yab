@@ -298,7 +298,8 @@ struct TabEngineTests {
         #expect(page.window?.identifier == Bench.roomID && factory.pages.count == 1)
     }
 
-    @Test func anAgentPageInTheRoomDrawsSlowlyOnlyBetweenItsCalls() {
+    @Test func anAgentPageInTheRoomDrawsSlowlyOnlyBetweenItsCalls() throws {
+        try #require(Bench.shared.callsInFlight == 0, "a bench call of another test is still waiting for its answer")
         let factory = Factory()
         let tab = Tab(bench: true, engine: .chromium, factory: factory.factory)
         defer { Bench.shared.rest(tab); tab.close() }
@@ -332,7 +333,8 @@ struct TabEngineTests {
         #expect(page.restsFrames)
     }
 
-    @Test func aNameThatComesAfterItsCallsAnswerWakesNothing() {
+    @Test func aNameThatComesAfterItsCallsAnswerWakesNothing() throws {
+        try #require(Bench.shared.callsInFlight == 0, "a bench call of another test is still waiting for its answer")
         let factory = Factory()
         let tab = Tab(bench: true, engine: .chromium, factory: factory.factory)
         defer { Bench.shared.rest(tab); tab.close() }
