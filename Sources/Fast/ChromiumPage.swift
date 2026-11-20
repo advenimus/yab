@@ -31,7 +31,7 @@ final class ChromiumPage: YabTextCheckingView, PageHandle, PageAudioControl {
     let media = ChromiumMedia()
     let sleepState = ChromiumSleep()
     let frames = ChromiumFrames()
-    var videoPiP: ChromiumVideoPiP?
+    var videoPiP: ChromiumVideoPiP? { didSet { if (videoPiP == nil) != (oldValue == nil) { paceFrames() } } }
     var nativeVideoPiPKnown = false
     var nativeVideoPiPRevision: UInt64 = 0
     private(set) var remoteID: String? {

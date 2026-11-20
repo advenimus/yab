@@ -30,14 +30,17 @@ final class ChromiumFrames {
 extension ChromiumPage: PageFramePace {
     nonisolated static let restingInterval = 33
 
-    nonisolated static func frameInterval(resting: Bool, inRoom: Bool) -> Int {
-        resting && inRoom ? restingInterval : 0
+    /// A video of the page in picture in picture is someone's to watch, and
+    /// its frame sink is the page's child: slowing the page would slow it.
+    nonisolated static func frameInterval(resting: Bool, inRoom: Bool, pictureInPicture: Bool = false) -> Int {
+        resting && inRoom && !pictureInPicture ? restingInterval : 0
     }
 
     var restsFrames: Bool {
         get { frames.resting }
+        // Sent only when it changes (ChromiumFrames.next), so asking each time
+        // the bench looks again also sends what a failed request didn't.
         set {
-            guard newValue != frames.resting else { return }
             frames.resting = newValue
             paceFrames()
         }
@@ -45,11 +48,12 @@ extension ChromiumPage: PageFramePace {
 
     /// A new page in the helper draws at the display's rate until told
     /// otherwise; one told nothing yet is told only to slow down. A request
-    /// that fails leaves what was sent before, and the next change of call,
-    /// stage or room sends again.
+    /// that fails leaves what was sent before, and the bench's next call,
+    /// or a change of stage or room, sends again.
     func paceFrames() {
         guard let remote = remoteID, !retired, ChromiumProcess.shared.connectedClient != nil else { return }
-        let interval = Self.frameInterval(resting: frames.resting, inRoom: window?.identifier == Bench.roomID)
+        let interval = Self.frameInterval(resting: frames.resting, inRoom: window?.identifier == Bench.roomID,
+                                          pictureInPicture: videoPiP != nil)
         guard let sent = ChromiumFrames.next(interval: interval, capable: ChromiumProcess.shared.pacesFrames, remote: remote,
                                              helper: ChromiumProcess.shared.connectionGeneration, sent: frames.sent) else { return }
         let before = frames.sent

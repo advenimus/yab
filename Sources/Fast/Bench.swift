@@ -537,7 +537,7 @@ final class Bench {
         let patience = bringing || pour ? 600 : fixture || osa ? 90 : polls ? min(request["seconds"] as? Double ?? 20, 60) + 5 : 25
         // The time-out goes through every wrapper added below, as any answer does.
         var answer: ([String: Any]) -> Void = { _ in }
-        let call = answerOnce(within: patience, timingOut: { answer($0) }) { UsageProbe.end(usage); given($0) }
+        let call = answerOnce(within: patience, for: request["session"] as? String, timingOut: { answer($0) }) { UsageProbe.end(usage); given($0) }
         answer = call.answer
         // A test can address either browser window without moving focus.
         let windowBrowser: Browser?
@@ -560,7 +560,6 @@ final class Bench {
             answer(["error": "no browser"])
             return
         }
-        if let tab = find(request, in: browser) { call.names(tab) }
         let verb = request["do"] as? String ?? ""
         if let refusal = ContextConsent.preflight(request) { answer(["error": refusal]); return }
         let contextEpoch = ContextPrivacy.shared.epoch
@@ -626,6 +625,8 @@ final class Bench {
            let refusal = Agents.shared.stoppedOnTab(tab, session: request["session"] as? String) {
             answer(["error": refusal]); return
         }
+        // Past the refusals above: a call turned away wakes nothing.
+        if let tab = find(request, in: browser) { call.names(tab) }
         if Bench.forAgents(verb) {
             agentCommand(verb, request, browser: browser, answer)
             return
@@ -10055,7 +10056,7 @@ final class Bench {
 
     private func worked(_ tab: Tab) {
         working[ObjectIdentifier(tab)] = Working(tab: tab, at: Date())
-        pace.woke(ObjectIdentifier(tab))
+        pace.woke(ObjectIdentifier(tab), for: tab.agent ?? tab.guest ?? Agents.script)
         paceRoom()
         guard resting == nil else { return }
         resting = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
@@ -10087,16 +10088,17 @@ final class Bench {
     /// `patience` the call says so itself, through `late` when given (the
     /// answer with the caller's wrappers, each of which passes it on). In
     /// flight until then, so the count of calls in flight always comes back down.
-    func answerOnce(within patience: TimeInterval, timingOut late: (([String: Any]) -> Void)? = nil,
+    func answerOnce(within patience: TimeInterval, for session: String? = nil, timingOut late: (([String: Any]) -> Void)? = nil,
                     _ given: @escaping ([String: Any]) -> Void)
         -> (answer: ([String: Any]) -> Void, names: (Tab) -> Void) {
         var answered = false
         var named: ObjectIdentifier?
-        pace.began()
+        let agent = session ?? Agents.script
+        pace.began(for: agent)
         let answer: ([String: Any]) -> Void = { [self] reply in
             guard !answered else { return }
             answered = true
-            pace.ended(naming: named)
+            pace.ended(for: agent, naming: named)
             paceRoom()
             given(reply)
         }
