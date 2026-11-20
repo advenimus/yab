@@ -197,6 +197,11 @@ struct SyncQuietTests {
         #expect(written.object?["updated"]?.string == "2026-09-21T14:13:20Z")
         #expect(written.object?["edited"]?.array?.compactMap(\.string) == Profile.keys.sorted())
         #expect(Profile.load(from: file) == theirs)
+        // One written before `edited` was sorted reads the same.
+        var old = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        old["edited"] = Array(Profile.keys.reversed())
+        try JSONSerialization.data(withJSONObject: old).write(to: file)
+        #expect(SyncShapes.files(in: folder)["profile.json"]?["json"] == written)
     }
 
     // MARK: settings kept as JSON

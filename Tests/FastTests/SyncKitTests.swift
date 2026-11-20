@@ -347,6 +347,22 @@ struct SyncKitTests {
         #expect(try b.receive(a.pending().map { ($0.record, 4) }).isEmpty)
     }
 
+    @Test func aClosedTabSeenElsewhereSinceIsNoNews() throws {
+        kinds()
+        let a = try Journal(path: nil, device: "a"), b = try Journal(path: nil, device: "b"), c = try Journal(path: nil, device: "c")
+        try a.reconcile("test.tab", ["1": ["title": "One", "seen": 1]])
+        let first = a.pending().map { ($0.record, Int64(1)) }
+        _ = try b.receive(first); _ = try c.receive(first)
+        // Closed on a, then seen on b before b heard of it.
+        try a.remove(Record.Key(collection: "test.tab", id: "1"))
+        try b.change(Record.Key(collection: "test.tab", id: "1"), ["seen": 9])
+        #expect(try c.receive(a.pending().map { ($0.record, 2) }).count == 1)
+        let seen = b.pending().map { ($0.record, Int64(3)) }
+        _ = try c.receive(seen)
+        // Delivered again, as a catch-up does: nothing new.
+        #expect(try c.receive(seen).isEmpty)
+    }
+
     @Test func aStampTakenForAChangeOutsideTheJournalSurvivesARelaunch() throws {
         kinds()
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("sync-\(UUID()).sqlite").path

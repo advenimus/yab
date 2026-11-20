@@ -188,10 +188,11 @@ enum SyncWallet {
 
     /// Records from elsewhere, into the keychain: each written only if it
     /// says something the keychain doesn't, each removal deleted. Whether
-    /// anything was.
+    /// the keychain is to be read again: something was written, or an item
+    /// here is newer than its record and goes up.
     @discardableResult
     static func write(_ records: [SyncKit.Record], seal: Seal, contextEpoch: String = ContextPrivacy.shared.epoch) -> Bool {
-        var wrote = false
+        var again = false
         // When each item here last changed, read once for the lot.
         lazy var logins = Dictionary((Vault.listed() ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         lazy var codes = OneTime.modified()
@@ -201,8 +202,10 @@ enum SyncWallet {
             let key = record.key
             // Changed here after the record was: this side goes up instead.
             func newerHere(_ modified: Date??) -> Bool {
-                Vault.localChanges()[key.description] != nil ||
+                let newer = Vault.localChanges()[key.description] != nil ||
                     keychainIsNewer(than: record, modified: Vault.modified(key.description, fallback: modified ?? nil), synced: Vault.synced(key.description))
+                if newer { again = true }
+                return newer
             }
             switch record.collection {
             case login:
@@ -210,7 +213,7 @@ enum SyncWallet {
                 if newerHere(listed?.modified) { continue }
                 guard record.alive() else {
                     let names = record.id.components(separatedBy: "\u{1}")
-                    if names.count == 2, listed != nil { Vault.forget(host: names[0], user: names[1], from: record.latest?.wall); wrote = true }
+                    if names.count == 2, listed != nil { Vault.forget(host: names[0], user: names[1], from: record.latest?.wall); again = true }
                     continue
                 }
                 guard let host = record["host"]?.string, let user = record["user"]?.string,
@@ -225,25 +228,25 @@ enum SyncWallet {
                     || listed?.used.map({ $0.timeIntervalSince1970.rounded(.down) }) != used?.timeIntervalSince1970
                     || (tagged != nil && listed?.space != tagged)
                     || Vault.password(host: host, user: user) != password {
-                    if Vault.save(host: host, user: user, password: password, used: used, clear: clear, space: tagged, from: record.latest?.wall) { wrote = true }
+                    if Vault.save(host: host, user: user, password: password, used: used, clear: clear, space: tagged, from: record.latest?.wall) { again = true }
                 }
             case code:
                 let names = record.id.components(separatedBy: "\u{1}")
                 guard names.count == 2, !newerHere(codes[record.id]) else { continue }
                 guard record.alive() else {
-                    if codes[record.id] != nil { OneTime.forget(host: names[0], user: names[1], from: record.latest?.wall); wrote = true }
+                    if codes[record.id] != nil { OneTime.forget(host: names[0], user: names[1], from: record.latest?.wall); again = true }
                     continue
                 }
                 guard let text = record["secret"]?.string.flatMap({ seal.reveal($0, in: key) }).flatMap({ String(data: $0, encoding: .utf8) }),
                       text != OneTime.text(host: names[0], user: names[1]) else { continue }
-                if OneTime.save(text, host: names[0], user: names[1], from: record.latest?.wall) { wrote = true }
+                if OneTime.save(text, host: names[0], user: names[1], from: record.latest?.wall) { again = true }
             case card, address:
                 if record.collection == address, !ContextPrivacy.shared.current(contextEpoch) { continue }
                 let isCard = record.collection == card
                 let modified = isCard ? cards[record.id] : places[record.id]
                 if newerHere(modified) { continue }
                 guard record.alive() else {
-                    if modified != nil { Wallet.remove(card: isCard, record.id, from: record.latest?.wall); wrote = true }
+                    if modified != nil { Wallet.remove(card: isCard, record.id, from: record.latest?.wall); again = true }
                     continue
                 }
                 guard let secret = record["secret"]?.string.flatMap({ seal.reveal($0, in: key) }) else { continue }
@@ -254,14 +257,14 @@ enum SyncWallet {
                     if ContextPrivacy.shared.mergeSyncedAddress(incoming, epoch: contextEpoch, stamp: record.latest, image: ContextSyncReplay.image(record), write: { merged in
                         guard let data = Wallet.addressData(merged) else { return false }
                         return Wallet.put(card: false, record.id, secret: data, facts: facts, from: record.latest?.wall)
-                    }) { wrote = true }
+                    }) { again = true }
                 } else {
-                    if Wallet.put(card: isCard, record.id, secret: secret, facts: facts, from: record.latest?.wall) { wrote = true }
+                    if Wallet.put(card: isCard, record.id, secret: secret, facts: facts, from: record.latest?.wall) { again = true }
                 }
             default: continue
             }
         }
-        return wrote
+        return again
     }
 
     /// Whether a record that says something other than the keychain's item

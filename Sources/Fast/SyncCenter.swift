@@ -1113,8 +1113,6 @@ final class SyncCenter: ObservableObject {
             if let failed { NSLog("sync: %@", String(describing: failed)) }
             DispatchQueue.main.async { [weak self] in
                 defer { done?() }
-                // Deleted by hand and not told: told with the next flush.
-                if failed != nil, !read.cuts.isEmpty { History.shared.keepCuts(read.cuts) }
                 guard let self, self.journal === journal, !self.leaving else { after?(false); return }
                 self.flushed(collections, journal: journal, failed: failed != nil)
                 after?(failed == nil)
@@ -1192,7 +1190,16 @@ final class SyncCenter: ObservableObject {
         }
         if let routines = read.routines { try SyncShapes.reconcileRoutines(journal, routines, device: read.device) }
         if let projects = read.projects { try journal.reconcile(SyncShapes.project, SyncShapes.projects(projects)) }
-        if let visits = read.visits { try SyncShapes.reconcileVisits(journal, SyncShapes.visits(visits), cuts: read.cuts) }
+        if let visits = read.visits {
+            do {
+                try SyncShapes.reconcileVisits(journal, SyncShapes.visits(visits), cuts: read.cuts)
+            } catch {
+                // Deleted by hand and not told: told with the next flush.
+                let cuts = read.cuts
+                if !cuts.isEmpty { DispatchQueue.main.async { MainActor.assumeIsolated { History.shared.keepCuts(cuts) } } }
+                throw error
+            }
+        }
         if let now = read.now { try SyncNow.reconcile(journal, now, device: read.device) }
         if read.failed != nil { return }
         if collections.contains(SyncShapes.memory) {
@@ -1395,7 +1402,7 @@ final class SyncCenter: ObservableObject {
         guard SyncWallet.on, let seal else { return }
         walletEpoch += 1
         walletQueue.async {
-            // Nothing written in, nothing to read back.
+            // Nothing written in and nothing here newer: nothing to read back.
             guard SyncWallet.write(records, seal: seal, contextEpoch: contextEpoch) else { return }
             DispatchQueue.main.async { [weak self] in self?.changed(SyncWallet.login) }
         }

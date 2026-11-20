@@ -800,8 +800,9 @@ public final class Journal: @unchecked Sendable {
                     if let had {
                         // A record removed already that was changed after
                         // that removal and removed again (a visit's cut) is
-                        // news too: its mirror reads why it went.
-                        let said = !merged.alive(kind) && had.record.deleted.map { gone in
+                        // news too: its mirror reads why it went. A closed
+                        // tab seen since stays closed: no news.
+                        let said = !merged.alive(kind) && merged.deleted != had.record.deleted && had.record.deleted.map { gone in
                             merged.stamps.contains { $0.value > gone && !(merged.fields[$0.key]?.isNull ?? true) }
                         } ?? false
                         if had.record.visible != merged.visible || had.record.alive(kind) != merged.alive(kind) || said {

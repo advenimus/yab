@@ -273,7 +273,13 @@ enum SyncShapes {
         var out: Collection = [:]
         for path in files {
             guard let data = try? Data(contentsOf: folder.appendingPathComponent(path)), data.count < 48_000,
-                  let json = try? JSONDecoder().decode(Value.self, from: data) else { continue }
+                  var json = try? JSONDecoder().decode(Value.self, from: data) else { continue }
+            // The profile's `edited` is a set: a file written before it was
+            // sorted says the same in another order.
+            if path == "profile.json", case .object(var profile) = json, let edited = profile["edited"]?.array {
+                profile["edited"] = .array(edited.sorted { ($0.string ?? "") < ($1.string ?? "") })
+                json = .object(profile)
+            }
             out[path] = ["json": json]
         }
         return out
