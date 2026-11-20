@@ -8,8 +8,9 @@ import WebKit
 struct TabEngineTests {
     /// An NSView with no WebKit inheritance proves ownership and state
     /// delivery do not depend on the compatibility accessors.
-    fileprivate final class Page: NSView, PageHandle, PageAudioControl, PageSleepActivity {
+    fileprivate final class Page: NSView, PageHandle, PageAudioControl, PageSleepActivity, PageFramePace {
         let engine: PageEngineKind
+        var restsFrames = false
         weak var events: (any PageEvents)?
         weak var stateEvents: (any PageStateEvents)?
         var url: URL?
@@ -295,6 +296,39 @@ struct TabEngineTests {
         #expect(page.window == nil && tab.builtPage === page)
         Bench.shared.house(tab)
         #expect(page.window?.identifier == Bench.roomID && factory.pages.count == 1)
+    }
+
+    @Test func anAgentPageInTheRoomDrawsSlowlyOnlyBetweenItsCalls() {
+        let factory = Factory()
+        let tab = Tab(bench: true, engine: .chromium, factory: factory.factory)
+        defer { Bench.shared.rest(tab); tab.close() }
+        Bench.shared.callBegan()
+        let named = Bench.shared.callNames(tab)
+        Bench.shared.house(tab)
+        let page = tab.page as! Page
+        #expect(page.window?.identifier == Bench.roomID && !page.restsFrames)
+        Bench.shared.callEnded(naming: named)
+        #expect(page.restsFrames, "no call is in flight for it")
+        Bench.shared.callBegan()
+        let again = Bench.shared.callNames(tab)
+        #expect(!page.restsFrames, "a call that names it wakes it before it is housed")
+        Bench.shared.house(tab)
+        Bench.shared.callEnded(naming: again)
+        #expect(page.restsFrames)
+        Bench.shared.rest(tab)
+        #expect(page.window == nil && !page.restsFrames)
+    }
+
+    @Test func aPageAnAgentOpenedDrawsFullyUntilNoCallIsInFlight() {
+        let factory = Factory()
+        let tab = Tab(bench: true, engine: .chromium, factory: factory.factory)
+        defer { Bench.shared.rest(tab); tab.close() }
+        Bench.shared.callBegan()
+        Bench.shared.house(tab)
+        let page = tab.page as! Page
+        #expect(!page.restsFrames)
+        Bench.shared.callEnded(naming: nil)
+        #expect(page.restsFrames)
     }
 
     @Test func sleepSafetyKeepsUnknownChromiumActivityAwake() {

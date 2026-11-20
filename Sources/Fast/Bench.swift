@@ -528,10 +528,13 @@ final class Bench {
         // would otherwise hold the bench, every later command waits behind it.
         var answered = false
         let usage = UsageProbe.begin(request)
+        callBegan()
+        var named: ObjectIdentifier?
         var answer: ([String: Any]) -> Void = { reply in
             guard !answered else { return }
             answered = true
             UsageProbe.end(usage)
+            self.callEnded(naming: named)
             given(reply)
         }
         // Long polls say how long they will hold; everything else answers
@@ -566,6 +569,7 @@ final class Bench {
             answer(["error": "no browser"])
             return
         }
+        if let tab = find(request, in: browser) { named = callNames(tab) }
         let verb = request["do"] as? String ?? ""
         if let refusal = ContextConsent.preflight(request) { answer(["error": refusal]); return }
         let contextEpoch = ContextPrivacy.shared.epoch
@@ -10027,6 +10031,8 @@ final class Bench {
     /// tab behind another is, until an agent next works in them.
     func rest(_ tab: Tab) {
         working.removeValue(forKey: ObjectIdentifier(tab))
+        pace.forget(ObjectIdentifier(tab))
+        (tab.builtPage as? PageFramePace)?.restsFrames = false
         if let page = tab.builtPage, page.engine != .webKit {
             // A remote producer follows attachment. Leaving a rested page
             // in the room would keep it painting until the next command.
@@ -10042,10 +10048,14 @@ final class Bench {
     }
 
     // A seen page that moves costs the browser about 7% of a core and
-    // its page's process 3% more (an animated canvas, measured 2026-09-28),
-    // and an agent that came through `yab mcp` can stay attached for hours
-    // between its calls. So a page is seen only near the work: one left
-    // alone two minutes rests until the next call in it.
+    // its page's process 3% more (an animated canvas, measured 2026-09-28
+    // on a 60 Hz display). A Chromium page here is paced by the main
+    // display, and at 240 Hz the same kind of page cost its GPU process 37%,
+    // its renderer 18% and the window server 14% (2026-11-19): between
+    // calls it now draws at 30 Hz (ChromiumPage+Frames.swift). An agent
+    // that came through `yab mcp` can stay attached for hours between its
+    // calls, so a page is seen only near the work: one left alone two
+    // minutes rests until the next call in it.
     private struct Working { weak var tab: Tab?; var at: Date }
     private var working: [ObjectIdentifier: Working] = [:]
     private var resting: Timer?
@@ -10053,6 +10063,8 @@ final class Bench {
 
     private func worked(_ tab: Tab) {
         working[ObjectIdentifier(tab)] = Working(tab: tab, at: Date())
+        pace.woke(ObjectIdentifier(tab))
+        paceRoom()
         guard resting == nil else { return }
         resting = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.restIdle() }
@@ -10062,11 +10074,37 @@ final class Bench {
     private func restIdle() {
         let now = Date()
         for (key, work) in working where work.tab == nil || now.timeIntervalSince(work.at) > Bench.seenFor {
-            if let tab = work.tab { rest(tab) } else { working.removeValue(forKey: key) }
+            if let tab = work.tab { rest(tab) } else { working.removeValue(forKey: key); pace.forget(key) }
         }
         if working.isEmpty {
             resting?.invalidate()
             resting = nil
+        }
+    }
+
+    // A page in the room between its agent's calls draws slowly
+    // (ChromiumPage+Frames.swift), and at the display's rate from the moment
+    // a call names it until that call has its answer (handleBound).
+    private var pace = BenchPace()
+
+    func callBegan() { pace.began() }
+
+    func callNames(_ tab: Tab) -> ObjectIdentifier {
+        let page = ObjectIdentifier(tab)
+        pace.names(page)
+        paceRoom()
+        return page
+    }
+
+    func callEnded(naming page: ObjectIdentifier?) {
+        pace.ended(naming: page)
+        paceRoom()
+    }
+
+    private func paceRoom() {
+        for (key, work) in working {
+            guard let page = work.tab?.builtPage as? PageFramePace else { continue }
+            page.restsFrames = !pace.awake(key)
         }
     }
 
