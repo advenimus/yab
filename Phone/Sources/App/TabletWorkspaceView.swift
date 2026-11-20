@@ -113,8 +113,9 @@ struct TabletWorkspaceView: View {
                     .opacity(gallery ? app.surfaces.chromeOpacity : 1)
                     .allowsHitTesting(!covered && !gallery).accessibilityHidden(covered || gallery)
             }
+            // No phone chrome under All Tabs: the sidebar is the iPad's, and the
+            // phone's plate faded in over the page as All Tabs closed.
             TabGalleryLayer()
-            if gallery { ChromeLayer() }
             if app.field.shown { TabletOmnibox(geometry: g) }
             WorkspaceChatsLayer()
             TasksLayer()
