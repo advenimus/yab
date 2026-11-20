@@ -302,18 +302,18 @@ struct TabEngineTests {
         let factory = Factory()
         let tab = Tab(bench: true, engine: .chromium, factory: factory.factory)
         defer { Bench.shared.rest(tab); tab.close() }
-        Bench.shared.callBegan()
-        let named = Bench.shared.callNames(tab)
+        let first = Bench.shared.answerOnce(within: 600) { _ in }
+        first.names(tab)
         Bench.shared.house(tab)
         let page = tab.page as! Page
         #expect(page.window?.identifier == Bench.roomID && !page.restsFrames)
-        Bench.shared.callEnded(naming: named)
+        first.answer([:])
         #expect(page.restsFrames, "no call is in flight for it")
-        Bench.shared.callBegan()
-        let again = Bench.shared.callNames(tab)
+        let next = Bench.shared.answerOnce(within: 600) { _ in }
+        next.names(tab)
         #expect(!page.restsFrames, "a call that names it wakes it before it is housed")
         Bench.shared.house(tab)
-        Bench.shared.callEnded(naming: again)
+        next.answer([:])
         #expect(page.restsFrames)
         Bench.shared.rest(tab)
         #expect(page.window == nil && !page.restsFrames)
@@ -324,11 +324,24 @@ struct TabEngineTests {
         let factory = Factory()
         let tab = Tab(bench: true, engine: .chromium, factory: factory.factory)
         defer { Bench.shared.rest(tab); tab.close() }
-        Bench.shared.callBegan()
+        let open = Bench.shared.answerOnce(within: 600) { _ in }
         Bench.shared.house(tab)
         let page = tab.page as! Page
         #expect(!page.restsFrames)
-        Bench.shared.callEnded(naming: nil)
+        open.answer([:])
+        #expect(page.restsFrames)
+    }
+
+    @Test func aNameThatComesAfterItsCallsAnswerWakesNothing() {
+        let factory = Factory()
+        let tab = Tab(bench: true, engine: .chromium, factory: factory.factory)
+        defer { Bench.shared.rest(tab); tab.close() }
+        Bench.shared.house(tab)
+        let page = tab.page as! Page
+        #expect(page.restsFrames)
+        let late = Bench.shared.answerOnce(within: 600) { _ in }
+        late.answer([:])
+        late.names(tab)
         #expect(page.restsFrames)
     }
 

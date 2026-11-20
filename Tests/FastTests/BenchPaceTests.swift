@@ -71,6 +71,39 @@ struct BenchPaceTests {
         #expect(!pace.awake(page))
     }
 
+    @Test func aCallThatIsNeverAnsweredEndsAtItsPatience() async throws {
+        let bench = Bench()
+        var replies: [[String: Any]] = []
+        _ = bench.answerOnce(within: 0.05) { replies.append($0) }
+        #expect(bench.callsInFlight == 1)
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(bench.callsInFlight == 0)
+        #expect(replies.count == 1 && (replies.first?["error"] as? String)?.hasPrefix("no answer within") == true)
+    }
+
+    @Test func aCallAnsweredTwiceAndTimedOutIsCountedOnce() async throws {
+        let bench = Bench()
+        var replies = 0
+        let other = bench.answerOnce(within: 600) { _ in }
+        let call = bench.answerOnce(within: 0.05) { _ in replies += 1 }
+        call.answer(["ok": true])
+        call.answer(["ok": true])
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(replies == 1 && bench.callsInFlight == 1, "only the other call is still in flight")
+        other.answer([:])
+        #expect(bench.callsInFlight == 0)
+    }
+
+    @Test func aTimeOutGoesThroughTheCallersWrappers() async throws {
+        let bench = Bench()
+        var wrapped: [String: Any]?
+        var answer: ([String: Any]) -> Void = { _ in }
+        let call = bench.answerOnce(within: 0.05, timingOut: { answer($0) }) { wrapped = $0 }
+        answer = { reply in var out = reply; out["wrapped"] = true; call.answer(out) }
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(wrapped?["wrapped"] as? Bool == true && bench.callsInFlight == 0)
+    }
+
     @Test func aHelperWithoutThePatchIsSentNothing() {
         let helper = UUID()
         for interval in [0, ChromiumPage.restingInterval] {

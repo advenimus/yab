@@ -524,19 +524,7 @@ final class Bench {
             WrappedLedger.shared.add(.codeCalls)
             WrappedLedger.shared.add("code.tool." + verb)
         }
-        // One answer, and always one: a page that never replies to a script
-        // would otherwise hold the bench, every later command waits behind it.
-        var answered = false
         let usage = UsageProbe.begin(request)
-        callBegan()
-        var named: ObjectIdentifier?
-        var answer: ([String: Any]) -> Void = { reply in
-            guard !answered else { return }
-            answered = true
-            UsageProbe.end(usage)
-            self.callEnded(naming: named)
-            given(reply)
-        }
         // Long polls say how long they will hold; everything else answers
         // well inside the time a tool call is given.
         let polls = ["wait", "handoff-wait", "agent-wait", "import", "settle", "mail-time"].contains(request["do"] as? String ?? "")
@@ -547,7 +535,10 @@ final class Bench {
         // A jar of tens of thousands poured the old way, on a busy Mac.
         let pour = request["do"] as? String == "cookie-pour"
         let patience = bringing || pour ? 600 : fixture || osa ? 90 : polls ? min(request["seconds"] as? Double ?? 20, 60) + 5 : 25
-        DispatchQueue.main.asyncAfter(deadline: .now() + patience) { answer(["error": "no answer within \(Int(patience)) s"]) }
+        // The time-out goes through every wrapper added below, as any answer does.
+        var answer: ([String: Any]) -> Void = { _ in }
+        let call = answerOnce(within: patience, timingOut: { answer($0) }) { UsageProbe.end(usage); given($0) }
+        answer = call.answer
         // A test can address either browser window without moving focus.
         let windowBrowser: Browser?
         if Store.testing, let number = request["browserWindowNumber"] as? Int {
@@ -569,7 +560,7 @@ final class Bench {
             answer(["error": "no browser"])
             return
         }
-        if let tab = find(request, in: browser) { named = callNames(tab) }
+        if let tab = find(request, in: browser) { call.names(tab) }
         let verb = request["do"] as? String ?? ""
         if let refusal = ContextConsent.preflight(request) { answer(["error": refusal]); return }
         let contextEpoch = ContextPrivacy.shared.epoch
@@ -10052,7 +10043,8 @@ final class Bench {
     // on a 60 Hz display). A Chromium page here is paced by the main
     // display, and at 240 Hz the same kind of page cost its GPU process 37%,
     // its renderer 18% and the window server 14% (2026-11-19): between
-    // calls it now draws at 30 Hz (ChromiumPage+Frames.swift). An agent
+    // calls it now draws at 30 Hz, where the helper has CEF 0137
+    // (ChromiumPage+Frames.swift). An agent
     // that came through `yab mcp` can stay attached for hours between its
     // calls, so a page is seen only near the work: one left alone two
     // minutes rests until the next call in it.
@@ -10084,22 +10076,41 @@ final class Bench {
 
     // A page in the room between its agent's calls draws slowly
     // (ChromiumPage+Frames.swift), and at the display's rate from the moment
-    // a call names it until that call has its answer (handleBound).
+    // a call names it until that call has its answer (answerOnce).
     private var pace = BenchPace()
 
-    func callBegan() { pace.began() }
     var callsInFlight: Int { pace.calls }
 
-    func callNames(_ tab: Tab) -> ObjectIdentifier {
-        let page = ObjectIdentifier(tab)
-        pace.names(page)
-        paceRoom()
-        return page
-    }
-
-    func callEnded(naming page: ObjectIdentifier?) {
-        pace.ended(naming: page)
-        paceRoom()
+    /// One answer, and always one: a page that never replies to a script
+    /// would otherwise hold the bench, every later command waits behind it.
+    /// The first reply goes and any later one is dropped; with none within
+    /// `patience` the call says so itself, through `late` when given (the
+    /// answer with the caller's wrappers, each of which passes it on). In
+    /// flight until then, so the count of calls in flight always comes back down.
+    func answerOnce(within patience: TimeInterval, timingOut late: (([String: Any]) -> Void)? = nil,
+                    _ given: @escaping ([String: Any]) -> Void)
+        -> (answer: ([String: Any]) -> Void, names: (Tab) -> Void) {
+        var answered = false
+        var named: ObjectIdentifier?
+        pace.began()
+        let answer: ([String: Any]) -> Void = { [self] reply in
+            guard !answered else { return }
+            answered = true
+            pace.ended(naming: named)
+            paceRoom()
+            given(reply)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + patience) { (late ?? answer)(["error": "no answer within \(Int(patience)) s"]) }
+        // Named once, and only while unanswered: a name after the answer
+        // would never be taken back.
+        let names: (Tab) -> Void = { [self] tab in
+            guard !answered, named == nil else { return }
+            let page = ObjectIdentifier(tab)
+            named = page
+            pace.names(page)
+            paceRoom()
+        }
+        return (answer, names)
     }
 
     private func paceRoom() {
