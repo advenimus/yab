@@ -1404,9 +1404,11 @@ final class SyncBridge {
         let flushed = CACurrentMediaTime()
         let touched = mirror.apply(batch.changes)
         if !writing {
-            // The account's first spaces, on a launch that waited for them
-            // (a batch of chats alone, early in a catch-up, isn't them).
-            if !mirror.spaces.isEmpty { takeAccount() }
+            // The account's first spaces, on a launch that waited for them.
+            // A catch-up page isn't them: it can bring Work before the first
+            // space, and the starting Personal then went up as a second one.
+            // The catch-up's end takes the account (changed(.live)).
+            if line == .live, !mirror.spaces.isEmpty { takeAccount() }
         } else if !touched.isEmpty {
             let arrived = batch.changes.contains { if case .tab = $0 { return true }; return false }
             let left = batch.changes.contains { if case .tabGone = $0 { return true }; return false }

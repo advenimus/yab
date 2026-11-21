@@ -749,6 +749,29 @@ final class SyncBridgeTests: XCTestCase {
         XCTAssertEqual(app.browser.spaceID, app.sync.localID(first), "the page in front stays in front")
     }
 
+    /// A catch-up longer than a page, the first space written last: the
+    /// page with only Work is not the account yet, and joining then made a
+    /// second Personal (an iPad showed two houses in its foot).
+    func testAStartingSpaceUsedBeforeJoiningWaitsForTheWholeCatchUp() async throws {
+        let server = SyncMemoryServer(), seal = Seal.make()
+        let mac = try TestMac(server: server, seal: seal)
+        try mac.write(SyncCollection.space, work, SyncSpace(id: work, name: "Work", icon: "💼", order: "X").fields)
+        mac.client.start()
+        let up = await until { mac.client.state == .live && mac.pending == 0 }
+        XCTAssertTrue(up, "the Mac made the account: \(mac.client.state)")
+        // Written in turn, so the server's order is Work, more than a page, Personal.
+        for i in 0..<600 { try mac.write(SyncCollection.memory, "memory-\(i)", ["text": .string("note \(i)")]) }
+        _ = await until { mac.pending == 0 }
+        try mac.write(SyncCollection.space, first, SyncSpace(id: first, name: "Personal", icon: "🏠", order: "V").fields)
+        _ = await until { mac.pending == 0 }
+        let app = try await phone(server, seal, world: startWorld(used: "https://example.com/before-join"), fixturesEnabled: false)
+        await settle(mac, app)
+        XCTAssertEqual(spaceNames(mac), ["Personal", "Work"])
+        XCTAssertEqual(app.browser.spaces.filter { !$0.isPrivate && $0.name == "Personal" }.count, 1)
+        let arrived = await until { mac.row(self.first).all.contains { $0.url == "https://example.com/before-join" } }
+        XCTAssertTrue(arrived, "the page went into the first space: \(mac.row(first).all.map(\.url))")
+    }
+
     /// The same iPhone installed three times (each a new journal and
     /// device, as a deleted app comes back): the account keeps one Personal.
     func testReinstallsAddNoPersonal() async throws {
