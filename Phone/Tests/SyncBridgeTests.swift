@@ -1365,6 +1365,29 @@ final class SyncBridgeTests: XCTestCase {
         XCTAssertEqual(merged.current, pin.id)
     }
 
+    /// Two pins with no address are not the same page: a blank pin of the
+    /// first space doesn't keep the starting space's real pins out, and a
+    /// blank one of its own stays behind as blank tabs do.
+    func testPinsWithNoAddressAreNoDuplicates() {
+        let real = Tab(id: "real", title: "Example", site: "Example", icon: "example", url: "https://example.com")
+        let none = { (id: String) in Tab(id: id, title: id, site: id, icon: "globe", url: nil) }
+        let start = Space(id: "local", name: "Personal", emoji: "🏠", tint: RGB(1, 2, 3), pins: [none("start.none"), real])
+        let first = Space(id: "first", name: "Personal", emoji: "🏠", tint: RGB(1, 2, 3), pins: [none("first.none")])
+        XCTAssertEqual(SyncBridge.merged(start, into: first).pins.map(\.id), ["first.none", "real"])
+    }
+
+    /// The starting Personal is Yab's only while named Personal with the
+    /// house, in the app's space and in the account's alike.
+    func testTheStartingPersonalIsNamedPersonalWithTheHouse() {
+        func start(_ name: String, _ emoji: String) -> Space {
+            Space(id: BrowserProfile.startSpace, name: name, emoji: emoji, tint: RGB(1, 2, 3))
+        }
+        XCTAssertTrue(SyncBridge.mergesIntoFirst(start("Personal", "🏠")))
+        XCTAssertTrue(SyncBridge.mergesIntoFirst(start(" Personal ", "🏠")))
+        XCTAssertFalse(SyncBridge.mergesIntoFirst(start("Reading", "🏠")))
+        XCTAssertFalse(SyncBridge.mergesIntoFirst(start("Personal", "📚")), "another icon makes it the person's own")
+    }
+
     /// A space's look goes whole both ways: what the Mac sets comes here
     /// with what this iPhone doesn't draw (theme, glass, Shift), its wash
     /// the same as sync makes; what is changed here (color, linked colors,

@@ -1576,7 +1576,14 @@ final class SyncBridge {
     /// called Personal: no folders of its own, so its tabs fit in another
     /// space as they are. Renamed, it is a space of the person's own.
     static func mergesIntoFirst(_ space: Space) -> Bool {
-        space.id == BrowserProfile.startSpace && !space.isPrivate && space.folders.isEmpty && space.name == "Personal"
+        space.id == BrowserProfile.startSpace && !space.isPrivate && space.folders.isEmpty
+            && isStartingPersonal(name: space.name, icon: space.emoji)
+    }
+
+    /// Still the starting space as Yab made it: Personal with the house.
+    /// Renamed or given another icon, it is a space of the person's own.
+    static func isStartingPersonal(name: String, icon: String) -> Bool {
+        name.trimmingCharacters(in: .whitespaces) == "Personal" && SpaceSymbols.emoji(icon) == "🏠"
     }
 
     /// `first` with the starting space's tabs at the end of their lists:
@@ -1585,9 +1592,10 @@ final class SyncBridge {
     static func merged(_ start: Space, into first: Space) -> Space {
         var out = first
         let have = Set(first.allTabs.map(\.id))
-        let pinned = Set(first.pins.map { address($0.url ?? "") })
+        // Only real addresses: two blank pins are not the same page.
+        let pinned = Set(first.pins.filter { !isBlank($0) }.compactMap { $0.url.map(address) })
         for tab in start.keptTabs where !isBlank(tab) && !have.contains(tab.id) { out.kept.append(.tab(tab)) }
-        for tab in start.pins where !tab.isPrivate && !isBlank(tab) && !have.contains(tab.id) && !pinned.contains(address(tab.url ?? "")) {
+        for tab in start.pins where !tab.isPrivate && !isBlank(tab) && !have.contains(tab.id) && !pinned.contains(tab.url.map(address) ?? "") {
             out.pins.append(tab)
         }
         for tab in start.today where !isBlank(tab) && !have.contains(tab.id) { out.today.append(tab) }
@@ -1641,9 +1649,7 @@ final class SyncBridge {
     /// mirror and the app's spaces in, the synced ids to delete out.
     static func emptyPersonals(_ mirror: SyncMirror, local: (String) -> String, app spaces: [Space],
                                gone: Set<String> = []) -> [String] {
-        func isPersonal(_ space: SyncSpace) -> Bool {
-            space.name.trimmingCharacters(in: .whitespaces) == "Personal" && SpaceSymbols.emoji(space.icon) == "🏠"
-        }
+        func isPersonal(_ space: SyncSpace) -> Bool { isStartingPersonal(name: space.name, icon: space.icon) }
         guard let first = mirror.spaces.values.first(where: \.isFirst) else { return [] }
         let personals = mirror.orderedSpaces.filter { !$0.isFirst && isPersonal($0) }
         var empty = personals.filter { synced in
@@ -1774,7 +1780,7 @@ final class SyncBridge {
     static func joinDuplicate(_ mirror: SyncMirror, start: String?) -> String? {
         guard let start, mirror.spaces.values.contains(where: \.isFirst),
               let copy = mirror.spaces[start], !copy.isFirst, !copy.ownSignIns,
-              copy.name.trimmingCharacters(in: .whitespaces) == "Personal", SpaceSymbols.emoji(copy.icon) == "🏠" else { return nil }
+              isStartingPersonal(name: copy.name, icon: copy.icon) else { return nil }
         let row = mirror.row(start)
         guard row.folders.isEmpty, row.elsewhere.allSatisfy({ blankURL($0.url) }) else { return nil }
         return start
