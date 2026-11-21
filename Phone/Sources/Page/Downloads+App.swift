@@ -17,10 +17,10 @@ extension AppModel {
             self.askDownload(question, answer: answer)
         }
         // A document a tab opened (a PDF) is whole: it shows in the system's
-        // viewer while that tab, or the page that opened it, is still in front.
+        // viewer when it may (showsDocument).
         pages.onViewDownload = { [weak self] tab, entry in
             guard let self, let file = downloads.entry(entry),
-                  browser.tab?.id == tab || browser.tab(tab) == nil else { return }
+                  showsDocument(file, for: tab, appActive: UIApplication.shared.applicationState == .active) else { return }
             openDownload(file)
         }
         pages.onImageSaved = { [weak self] outcome in
@@ -31,6 +31,13 @@ extension AppModel {
             case .failed: self?.say("Couldn’t get this image", glyph: .exclamationCircle)
             }
         }
+    }
+
+    /// The viewer opens only over the tab the file is for (WebPool names the
+    /// opener for a window that was only the file), in front, in use, and of
+    /// the page's own privacy. Otherwise the file just lands in Downloads.
+    func showsDocument(_ file: DownloadEntry, for tab: Tab.ID, appActive: Bool) -> Bool {
+        appActive && browser.tab?.id == tab && file.isPrivate == pageIsPrivate
     }
 
     /// An allowed site doesn't ask, one told no doesn't send. A private tab

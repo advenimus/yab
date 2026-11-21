@@ -420,6 +420,33 @@ final class PageDownloadTests: XCTestCase {
         try await require { !self.pages.state(for: fresh.id).isLoading }
     }
 
+    /// A window the page opened that was only ever the PDF closes back to its
+    /// opener: the viewer is the opener's, not the gone window's.
+    func testAPDFInAWindowThePageOpenedIsForItsOpener() async throws {
+        var viewed: [(Tab.ID, UUID)] = [], closed: [(Tab.ID, Tab.ID)] = []
+        pages.onViewDownload = { viewed.append(($0, $1)) }
+        pages.onCloseWindowFrom = { closed.append(($0, $1)) }
+        let source = tab("download.pdf.opener"), view = try await ready(source)
+        var window: YabPhone.Tab?
+        pages.onOpenWindowFrom = { [unowned self] url, opener, _ in
+            XCTAssertEqual(opener, source.id)
+            let opened = self.tab("download.pdf.window", url.path())
+            window = opened
+            // As the app does: the new window comes to the front.
+            DispatchQueue.main.async { self.show(self.pages.activate(opened)) }
+            return opened
+        }
+        view.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        try await click(view, "pdfwindow")
+        let file = try await completed()
+        XCTAssertEqual(file.name, "doc.pdf")
+        let opened = try XCTUnwrap(window)
+        try await require { viewed.count == 1 }
+        XCTAssertEqual(closed.map(\.0), [opened.id], "the window that was only the file goes")
+        XCTAssertEqual(viewed.first?.0, source.id, "the viewer is for the page that opened the window")
+        XCTAssertEqual(viewed.first?.1, file.id)
+    }
+
     func testNativeRequestDownloadReportsItsAPIFrameWithoutNavigatingTheActualDocument() async throws {
         var publicStore: WKWebsiteDataStore?
         for privately in [false, true] {
@@ -603,7 +630,7 @@ private final class DownloadSite: @unchecked Sendable {
                 } else { self.send(headers + (self.fails ? Data(body.prefix(2)) : body), connection) }
                 return
             }
-            let body = "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><link rel=icon href=data:,><title>Owned download source</title><style>body{font:20px system-ui;padding:70px 20px;background:#ddf4ff}a,button{display:block;padding:16px;margin:16px 0}</style><h1 id=part>Owned actual source</h1><a id=fragment href=#part>Actual fragment</a><a id=file href=/file>Download actual file</a><a id=pdf href=/doc.pdf>Actual PDF</a><button id=touch onclick=\"window.actions=(window.actions||0)+1;document.getElementById('result').textContent='Page action '+window.actions\">Page action</button><output id=result>Ready</output>"
+            let body = "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><link rel=icon href=data:,><title>Owned download source</title><style>body{font:20px system-ui;padding:70px 20px;background:#ddf4ff}a,button{display:block;padding:16px;margin:16px 0}</style><h1 id=part>Owned actual source</h1><a id=fragment href=#part>Actual fragment</a><a id=file href=/file>Download actual file</a><a id=pdf href=/doc.pdf>Actual PDF</a><a id=pdfwindow href=/doc.pdf target=_blank>Actual PDF window</a><button id=touch onclick=\"window.actions=(window.actions||0)+1;document.getElementById('result').textContent='Page action '+window.actions\">Page action</button><output id=result>Ready</output>"
             let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
             self.send(Data(response.utf8), connection)
         }
