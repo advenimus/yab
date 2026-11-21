@@ -140,7 +140,10 @@ extension AppModel {
         let samePage = field.showsAddress
         // Private words have no tab, chat or agent to go to (the rows never offer them).
         let searches: Bool = if case .searchFor = row.action { true } else { false }
-        if isPrivate, !searches, ![.search, .open, .findOnPage].contains(row.action) { return }
+        // A command runs only while the field offers it, which in Private is only what Private can run.
+        if case let .command(token) = row.action, !commandCandidates.contains(where: { $0.token == token }) { return }
+        let command: Bool = if case .command = row.action { true } else { false }
+        if isPrivate, !searches, !command, ![.search, .open, .findOnPage].contains(row.action) { return }
         let place: Bool = if case .place = row.action { true } else { false }
         let site: Bool = if case .site = row.action { true } else { false }
         if searches || place || site || [.search, .open].contains(row.action) { adoptNewTabSpace() }
@@ -183,11 +186,11 @@ extension AppModel {
         case .settings:
             Motion.sheetGrow.run { surfaces.openSettings() }
         case let .command(token):
-            guard let key = BrowserKey(token: token) else { return }
+            guard let command = FieldCommand(token: token) else { return }
             closeFieldAfterChoice()
             // Once the field is gone: the keys stay the field's while it is up.
             DispatchQueue.main.asyncAfter(deadline: .now() + (Motion.disabled ? 0 : Motion.fieldClose.duration)) { [weak self] in
-                self?.use(key)
+                self?.run(command)
             }
         case .findOnPage:
             let id = browser.tab?.id

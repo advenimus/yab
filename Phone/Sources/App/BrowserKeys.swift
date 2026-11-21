@@ -297,11 +297,3 @@ extension BrowserKey {
         return marks + key
     }
 }
-
-extension AppModel {
-    /// The menu actions the field offers now (Words.commandRows).
-    var commandCandidates: [CommandCandidate] {
-        BrowserKey.all.filter { $0.commandable && offers($0) }
-            .map { CommandCandidate(token: $0.token, title: $0.title, aliases: $0.aliases, shortcut: $0.shortcut) }
-    }
-}
