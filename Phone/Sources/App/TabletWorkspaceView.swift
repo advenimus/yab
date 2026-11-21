@@ -551,6 +551,9 @@ private struct TabletSiteControls: View {
                         // The popover goes first: the panel and the sheet stand in its place.
                         Button("Print…") { app.surfaces.closeMenu(); app.pageMenu.reset(); app.printPage() }
                         Button("Save as PDF") { app.surfaces.closeMenu(); app.pageMenu.reset(); app.savePageAsPDF() }
+                        if app.offers(.download) {
+                            Button("Download") { app.surfaces.closeMenu(); app.pageMenu.reset(); app.downloadPage() }
+                        }
                         Divider()
                         Button("Clear Cookies and Site Data…", role: .destructive) { app.pageMenu.confirmClear = true }
                         Button("Yab Settings…") { app.pageMenuYabSettings() }

@@ -77,6 +77,10 @@ final class WebPool: NSObject {
     private(set) var javaScriptDialog: PageJavaScriptDialog?
     private(set) var httpAuthentication: PageHTTPAuthentication?
     var downloadOrigins: [Tab.ID: DownloadOrigin] = [:]
+    /// The main document's type, from the response WebKit let load, until
+    /// that load commits (respondedTypes), then for the committed page.
+    var respondedTypes: [Tab.ID: (url: URL?, type: String?)] = [:]
+    var documentTypes: [Tab.ID: String] = [:]
     var downloadConversions: [Tab.ID: DownloadConversion] = [:]
     /// Tabs whose main frame was just sent on to an app's link and refused.
     private var appLinks: Set<Tab.ID> = []
@@ -184,6 +188,8 @@ final class WebPool: NSObject {
         var readerAvailable = false
         var readerEnabled = false
         var failure: PageLoadFailure?
+        /// The page is a file WebKit shows (a picture, a sound, text) that Download keeps.
+        var downloadable = false
         static let idle = PageState()
     }
     var onState: ((Tab.ID, PageState) -> Void)?
@@ -1033,6 +1039,7 @@ final class WebPool: NSObject {
         downloadOrigins[id] = nil; downloadConversions[id] = nil
         if javaScriptDialog?.tab == id || httpAuthentication?.tab == id { suspendPageDialogs() }
         activeNavigations[id] = nil; documents[id] = nil; committedURLs[id] = nil; loadFailures[id] = nil
+        respondedTypes[id] = nil; documentTypes[id] = nil
         provisional.remove(id)
         endRefresh(id, in: view)
         view.scrollView.refreshControl?.removeTarget(self, action: #selector(pulledToRefresh(_:)), for: .valueChanged)
@@ -1353,7 +1360,7 @@ final class WebPool: NSObject {
             canGoForward: view.canGoForward || ((history?.index ?? 0) + 1 < (history?.entries.count ?? 0)),
             readerAvailable: !view.isLoading && loadFailures[id] == nil && reader?.available == true,
             readerEnabled: !view.isLoading && loadFailures[id] == nil && reader?.enabled == true,
-            failure: loadFailures[id])
+            failure: loadFailures[id], downloadable: documentDownloadable(id))
         guard pageStates[id] != state else { return }
         pageStates[id] = state
         onState?(id, state)
@@ -1959,6 +1966,7 @@ extension WebPool: WKNavigationDelegate {
         failures[id] = nil
         loadFailures[id] = nil
         committedURLs[id] = webView.url
+        commitDocumentType(id, at: webView.url)
         readerScroll[id] = nil
         readerGeneration[id] = UUID()
         readerDocuments[id] = nil
@@ -1988,7 +1996,14 @@ extension WebPool: WKNavigationDelegate {
         waitForPaint(id, in: webView)
     }
 
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(webView, navigation: navigation, provisional: false, error) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        // A video or a sound shown as the page ends its load by handing it to
+        // WebKit's player ("Plug-in handled load"): the page is there, loaded.
+        let native = error as NSError
+        if native.domain == "WebKitErrorDomain" && native.code == Self.playerHandledLoad { return self.webView(webView, didFinish: navigation) }
+        failed(webView, navigation: navigation, provisional: false, error)
+    }
+    private static let playerHandledLoad = 204
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(webView, navigation: navigation, provisional: true, error) }
 
     private func failed(_ view: WKWebView, navigation: WKNavigation?, provisional: Bool, _ error: Error) {
@@ -2140,7 +2155,9 @@ extension WebPool: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-        downloadPolicy(for: response, in: webView)
+        let policy = downloadPolicy(for: response, in: webView)
+        noteDocumentType(response, loads: policy == .allow, in: webView)
+        return policy
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {

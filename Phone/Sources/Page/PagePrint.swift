@@ -4,12 +4,19 @@ import os
 
 private let printLog = Logger(subsystem: "dev.serafim.fast.iphone", category: "print")
 
-/// The Mac's Duplicate Tab, Print… and Save as PDF for a page.
+/// The Mac's Duplicate Tab, Print… and Save as PDF for a page, and
+/// Download for a page that is a file.
 extension AppModel {
     /// The tab's page again, in a new tab of its space, in front.
     func duplicate(_ tab: Tab) {
         guard let url = tab.navigationURL else { return }
         openHeldLink(url, from: tab.id, as: .front)
+    }
+
+    /// Download: the picture, sound or text the page is, into Downloads.
+    func downloadPage() {
+        guard let tab = browser.tab else { return }
+        pages.downloadDocument(of: tab.id)
     }
 
     /// Print…: the system's print panel with the page as WebKit lays it out for paper.

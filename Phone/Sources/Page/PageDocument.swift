@@ -20,7 +20,19 @@ nonisolated enum PageDocument {
     ]
 
     static func opensInViewer(_ mimeType: String?) -> Bool {
-        guard let type = mimeType?.split(separator: ";").first?.trimmingCharacters(in: .whitespaces).lowercased() else { return false }
+        guard let type = essence(mimeType) else { return false }
         return types.contains(type)
+    }
+
+    /// A page that is itself a file WebKit shows (a picture, a video, a
+    /// sound, text): Download keeps it. HTML is a page, and the viewer's
+    /// documents never stay pages.
+    static func offersDownload(_ mimeType: String?) -> Bool {
+        guard let type = essence(mimeType), !types.contains(type), type != "text/html" else { return false }
+        return ["image/", "video/", "audio/", "text/"].contains { type.hasPrefix($0) }
+    }
+
+    private static func essence(_ mimeType: String?) -> String? {
+        mimeType?.split(separator: ";").first?.trimmingCharacters(in: .whitespaces).lowercased()
     }
 }

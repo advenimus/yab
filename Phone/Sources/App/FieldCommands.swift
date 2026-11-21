@@ -4,10 +4,10 @@ import Foundation
 /// menu action that has no key, as the Mac's field finds both.
 enum FieldCommand: Hashable, Sendable {
     case key(BrowserKey)
-    case savePDF, duplicateTab, splitView
+    case savePDF, duplicateTab, splitView, download
 
     static let all: [FieldCommand] = BrowserKey.all.filter(\.commandable).map { .key($0) }
-        + [.savePDF, .duplicateTab, .splitView]
+        + [.savePDF, .duplicateTab, .splitView, .download]
 
     var token: String {
         switch self {
@@ -27,6 +27,7 @@ enum FieldCommand: Hashable, Sendable {
         case .savePDF: "Save as PDF"
         case .duplicateTab: "Duplicate Tab"
         case .splitView: "Split View"
+        case .download: "Download"
         }
     }
 
@@ -36,6 +37,7 @@ enum FieldCommand: Hashable, Sendable {
         case .savePDF: ["pdf", "export pdf"]
         case .duplicateTab: ["copy tab", "clone tab"]
         case .splitView: ["open in split view", "side by side"]
+        case .download: ["save file", "download file"]
         }
     }
 
@@ -63,6 +65,7 @@ extension AppModel {
         case .savePDF: return tab != nil
         case .duplicateTab: return tab.map { !$0.isMail && $0.navigationURL != nil } ?? false
         case .splitView: return workspace.canSplit && tab.map { !$0.isMail } == true && !pageIsPrivate
+        case .download: return tab != nil && currentPageState.downloadable
         }
     }
 
@@ -73,7 +76,7 @@ extension AppModel {
     func runsInPrivate(_ command: FieldCommand) -> Bool {
         let page = browser.tab?.isPrivate == true
         switch command {
-        case .savePDF, .duplicateTab: return page
+        case .savePDF, .duplicateTab, .download: return page
         case .splitView: return false
         case let .key(key):
             switch key {
@@ -96,6 +99,7 @@ extension AppModel {
         case .savePDF: savePageAsPDF()
         case .duplicateTab: duplicate(tab)
         case .splitView: newTabBeside()
+        case .download: downloadPage()
         }
     }
 }

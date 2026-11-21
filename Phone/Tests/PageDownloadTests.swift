@@ -385,6 +385,49 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), before.entries.map(\.url))
     }
 
+    /// A picture, a sound or a text file shown as the page is kept as it
+    /// came: the same address again, through the tab's own cookies, and its
+    /// history stays as it was.
+    func testDownloadKeepsAPictureSoundOrTextPageWithTheTabsCookie() async throws {
+        for (path, body, cookie) in [("/pic.png", DownloadSite.png, "pic"), ("/clip.mp3", DownloadSite.mp3, "clip"), ("/note.txt", DownloadSite.note, "note")] {
+            let source = tab("download.document\(cookie)"), view = try await ready(source)
+            XCTAssertFalse(pages.state(for: source.id).downloadable, "an HTML page has no Download")
+            let _: Any = try await view.evaluateJavaScript("document.cookie='\(cookie)=owned;path=/'; true")
+            pages.load(source.id, site.url(path))
+            // A sound is WebKit's player's load: the page is there, not a failure.
+            try await require { view.url == self.site.url(path) && !view.isLoading && self.pages.painted.contains(source.id) && self.pages.state(for: source.id).downloadable }
+            XCTAssertNil(pages.state(for: source.id).failure, "\(path) shows as a page")
+            let before = try XCTUnwrap(pages.navigationState(for: source.id))
+            let asked = site.requests.count
+            pages.downloadDocument(of: source.id)
+            let file = try await completed()
+            XCTAssertEqual(file.name, String(path.dropFirst()))
+            XCTAssertEqual(try bytes(file), body, path)
+            // A player may ask again for its sound: every request since, the file's own among them, carries the tab's cookie.
+            let since = site.requests.dropFirst(asked)
+            XCTAssertFalse(since.isEmpty)
+            XCTAssertTrue(since.allSatisfy { $0.target == path && $0.header.contains("\(cookie)=owned") }, path)
+            try await settles(view, at: site.url(path))
+            XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), before.entries.map(\.url))
+            XCTAssertEqual(pages.navigationState(for: source.id)?.index, before.index)
+            XCTAssertEqual(pages.front, source.id)
+            store.delete(file.id)
+        }
+    }
+
+    /// A page that is a page, not a file, offers no Download, and asking
+    /// anyway fetches nothing.
+    func testAnHTMLPageOffersNoDownload() async throws {
+        let source = tab("download.document.html"), view = try await ready(source)
+        XCTAssertFalse(pages.state(for: source.id).downloadable)
+        let asked = site.requests.count
+        pages.downloadDocument(of: source.id)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(site.requests.count, asked)
+        XCTAssertTrue(pages.transfers.isEmpty && store.entries.isEmpty)
+        try await settles(view, at: site.url("/page"))
+    }
+
     /// A PDF the page opens inline is a file for the system's viewer: kept
     /// in Downloads without asking, handed to the viewer once whole, and the
     /// page it came from stays as it was.
@@ -560,6 +603,11 @@ private final class DownloadSite: @unchecked Sendable {
     static let bytes = Data("Owned actual download café+tea\n".utf8)
     /// A PDF the page shows inline, no attachment: one empty page.
     static let pdf = Data("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n".utf8)
+    /// Files a tab shows as its page: a picture, a sound, plain text.
+    static let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")!
+    static let mp3 = Data([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFB, 0x90, 0x00])
+    static let note = Data("An owned note, kept as it came.\n".utf8)
+    static let documents = ["/pic.png": ("image/png", png), "/clip.mp3": ("audio/mpeg", mp3), "/note.txt": ("text/plain; charset=utf-8", note)]
     private let listener: NWListener
     private let queue = DispatchQueue(label: "owned.download.site")
     private var connections: [ObjectIdentifier:NWConnection] = [:]
@@ -615,6 +663,11 @@ private final class DownloadSite: @unchecked Sendable {
             }
             let target = header.components(separatedBy: " ").dropFirst().first ?? "/"
             self.received.append(Request(target: target, header: header))
+            if let (type, body) = Self.documents[target] {
+                let headers = Data("HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
+                self.send(headers + body, connection)
+                return
+            }
             if target == "/doc.pdf" {
                 let body = Self.pdf
                 let headers = Data("HTTP/1.1 200 OK\r\nContent-Type: application/pdf\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
