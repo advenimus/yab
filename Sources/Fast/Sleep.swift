@@ -173,7 +173,23 @@ extension Browser {
 
         // Pictures of sleeping tabs are for this run only: a tab brought
         // back from the last session has no page and no picture of one.
+        // Once, not with every window: another window's sleeping tabs keep theirs.
+        guard !Self.picturesCleared else { return }
+        Self.picturesCleared = true
         Tab.disk.async { try? FileManager.default.removeItem(at: Tab.pictures) }
+    }
+
+    private static var picturesCleared = false
+
+    /// The window is gone: its looks stop with it, or every closed window
+    /// leaves four timers and an ear for memory running for good.
+    func stopWatching() {
+        stoppedWatching = true
+        dozing?.invalidate(); dozing = nil
+        pressure?.cancel(); pressure = nil
+        nextLook?.cancel(); nextLook = nil
+        Thrift.unwatch(self)
+        stuck.stop()
     }
 
     /// Memory short: the heaviest tab that can sleep goes to sleep, and a
@@ -183,7 +199,7 @@ extension Browser {
     /// page to wait for.
     func relieve(assuming assumed: Int = 1) {
         // Whatever Put idle tabs to sleep says: that switch is the timer's.
-        guard !relieving else { return }
+        guard !relieving, !stoppedWatching else { return }
         let level = Pressure.level ?? assumed
         guard level > 1 else {
             passedOver = []
