@@ -91,7 +91,8 @@ final class WebPool: NSObject {
     let downloads: DownloadStore
     /// A site wants to send a file: nil lets it (tests of the transfer itself).
     var onDownloadAsk: (@MainActor (DownloadAsk, @escaping @MainActor (Bool) -> Void) -> Void)?
-    /// A document a tab opened is whole (PageDocument): the system's viewer shows it.
+    /// A document a tab opened is whole (PageDocument), for the tab it is shown
+    /// for: the tab itself, or the opener of a window that was only the file.
     var onViewDownload: (@MainActor (Tab.ID, UUID) -> Void)?
     private var pageInteractionsEnabled = true
     /// Yab is in the background (or inactive on its way there).

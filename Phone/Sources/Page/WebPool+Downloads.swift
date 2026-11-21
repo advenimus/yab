@@ -84,14 +84,17 @@ extension WebPool {
               documents[id] == conversion.document, activeNavigations[id] === conversion.navigation,
               download.originalRequest?.url == conversion.origin.requestURL,
               download.originatingFrame.request.url == conversion.origin.frameURL,
-              download.originatingFrame.isMainFrame, download.webView === view,
-              case let fresh = committedURLs[id] == nil,
+              download.originatingFrame.isMainFrame, case let fresh = committedURLs[id] == nil,
+              // A new window's first load is its opener's: WebKit names the opener's view.
+              download.webView === view || fresh && download.webView === popupOpeners[id].flatMap({ live[$0] }),
               let origin = fresh ? releaseFreshSource(id, in: view) : restoreDownloadSource(id, in: view) else { download.cancel(nil); return }
         downloadConversions[id] = nil
-        presentDownload(download, tab: id, in: view, origin: origin, opens: conversion.opens)
+        let opener = fresh ? popupOpeners.removeValue(forKey: id) : nil
+        presentDownload(download, tab: id, viewer: opener ?? id, in: view, origin: origin, opens: conversion.opens)
         // A page's new window that was only ever this file has nothing to
-        // show: it goes, as window.close() would, back to its opener.
-        if fresh, let opener = popupOpeners.removeValue(forKey: id) {
+        // show: it goes, as window.close() would, back to its opener, and
+        // the document is shown for the opener.
+        if let opener {
             onCloseWindowFrom?(id, opener)
             forget(id)
         }
@@ -111,14 +114,16 @@ extension WebPool {
         return origin
     }
 
-    private func presentDownload(_ download: WKDownload, tab id: Tab.ID, in view: WKWebView, origin: DownloadOrigin, opens: Bool) {
+    private func presentDownload(_ download: WKDownload, tab id: Tab.ID, viewer: Tab.ID, in view: WKWebView, origin: DownloadOrigin, opens: Bool) {
         guard canInteract(id, in: view) else { download.cancel(nil); return }
-        adopt(download, tab: id, page: committedURLs[id] == nil ? nil : origin.url, opens: opens)
+        adopt(download, tab: id, page: committedURLs[id] == nil ? nil : origin.url, opens: opens, viewer: viewer)
     }
 
     /// The WKDownload is ours from here. Its source goes by the page it came
     /// from, as the page said it then: its tab may be long gone by Retry.
-    private func adopt(_ download: WKDownload, tab id: Tab.ID, page: URL?, entry: UUID? = nil, opens: Bool = false) {
+    /// A document is shown for `viewer` once whole.
+    private func adopt(_ download: WKDownload, tab id: Tab.ID, page: URL?, entry: UUID? = nil,
+                       opens: Bool = false, viewer: Tab.ID? = nil) {
         let site = siteOf?(id, page)
         let source = PageDownload.Source(tab: id, host: site?.host ?? page?.host() ?? download.originalRequest?.url?.host() ?? "",
                                          isPrivate: site?.isPrivate ?? privateTabs.contains(id))
@@ -130,7 +135,7 @@ extension WebPool {
             retry: { [weak self] entry, store, request in
                 self?.retryDownload(entry, store, request, page: page, tab: id) ?? false
             }, ended: { [weak self] token in self?.transfers[token] = nil },
-            viewed: { [weak self] entry in self?.onViewDownload?(id, entry) })
+            viewed: { [weak self] entry in self?.onViewDownload?(viewer ?? id, entry) })
         transfers[job.id] = job
         if appAway { job.leave() }
     }
