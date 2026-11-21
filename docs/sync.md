@@ -325,7 +325,24 @@ One Personal per account. A new iPhone profile starts with a Personal
 (`local.personal`) of its own. Joining an account that has spaces, it
 never becomes another space: untouched, it goes; used before joining (and
 still called Personal), its tabs go into the first space, kept ones kept,
-the rest today's (`SyncBridge.rebuild`). Earlier builds added one
+the rest today's (`SyncBridge.rebuild`), and a pin the first space has at
+that address isn't added twice. It waits for the whole catch-up: a
+catch-up page can bring Work before the first space. Before that wait, a
+join could put the starting Personal up as a second Personal under an id
+of its own. The device that made it repairs it on each launch once its
+line is caught up (`SyncBridge.joinDuplicate`, `repairJoinDuplicate`,
+beside the prune below). Only that device acts: its own
+`browser-ids.json` maps `local.personal` to the copy, and two devices
+moving and deleting at once could lose a tab (a tab's removal wins). All
+must hold: the copy isn't the first space, the first space is in, the
+copy is still Personal with 🏠, has no sign-ins or folders of its own,
+and holds no page of another device's today (pins, kept tabs and this
+device's today's only). Its tabs go into the first space the way a used
+starting space's do, the moves are written, and once the journal holds
+nothing of it but blank tabs, it is deleted on every device. After the
+delete its tombstone makes the rule false, so a second run writes
+nothing; a launch cut short between the moves and the delete finishes on
+the next. Its colors are not kept. Earlier builds added one
 empty Personal per install; once its line is caught up, an iPhone deletes
 those on every device: not the first space, not one with a page, a folder,
 its own sign-ins or a private tab, and one Personal always stays

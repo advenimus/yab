@@ -863,6 +863,187 @@ final class SyncBridgeTests: XCTestCase {
         XCTAssertEqual(SyncBridge.emptyPersonals(noFirst, local: { $0 }, app: []), [], "no first space, nothing goes")
     }
 
+    // MARK: - the second Personal a broken join made
+
+    private enum Broken {
+        static let pinned = "https://example.org/pinned"
+        static let kept = "https://example.org/kept"
+        static let today = "https://example.org/today"
+        static let urls = [pinned, kept, today]
+    }
+
+    /// How a broken join left an account: the iPhone joined before the
+    /// account's first space was in (Work only), so its used starting
+    /// Personal went up as a second Personal under a new id, holding a pin,
+    /// a kept tab and one of today's. Then the first space came, with the
+    /// same pin. `before` changes the iPhone's profile before it joins;
+    /// `firstComes` false leaves the account without its first space.
+    /// Returns the Mac, the copy's id and the profile's folder.
+    private func brokenJoin(_ server: SyncMemoryServer, _ seal: Seal, firstComes: Bool = true,
+                            before: (AppModel) -> Void = { _ in }) async throws -> (TestMac, String, URL) {
+        let mac = try TestMac(server: server, seal: seal)
+        try mac.write(SyncCollection.space, work, SyncSpace(id: work, name: "Work", icon: "💼", order: "X").fields)
+        mac.client.start()
+        let up = await until { mac.client.state == .live && mac.pending == 0 }
+        XCTAssertTrue(up, "the Mac made the account: \(mac.client.state)")
+        let profile = BrowserProfile(folder: folder.appendingPathComponent("browser"))
+        let app = AppModel(world: profile.world, fixturesEnabled: false, profile: profile)
+        let tabs = Broken.urls.map { PageFixtures.liveTab(for: URL(string: $0)!) }
+        for tab in tabs { app.browser.open(tab) }
+        app.browser.pin(tabs[0].id)
+        app.browser.keep(tabs[1].id)
+        before(app)
+        let keys = SyncKeychain.testing(folder: folder.appendingPathComponent("keys"))
+        keys.keep(seal, share: false)
+        app.sync.attach(app, setup: setup(server, ownWorld: false))
+        let sent = await until(8) {
+            app.sync.line == .live && app.sync.pending == 0
+                && Broken.urls.allSatisfy { url in self.living(mac).contains { $0.url == url } }
+        }
+        XCTAssertTrue(sent, "\(living(mac).map(\.url))")
+        let copy = try XCTUnwrap(living(mac).first { $0.url == Broken.today }?.space)
+        XCTAssertNotEqual(copy, first)
+        if firstComes {
+            try mac.write(SyncCollection.space, first, SyncSpace(id: first, name: "Personal", icon: "🏠", order: "V").fields)
+            try mac.write(SyncCollection.tab, "AAAAAAAA-0000-4000-8000-0000000000B1",
+                          SyncTab(id: "AAAAAAAA-0000-4000-8000-0000000000B1", space: first, order: "A", url: Broken.pinned,
+                                  title: "Pinned", pin: "P").fields)
+            let came = await until { app.browser.space(self.first) != nil && mac.pending == 0 }
+            XCTAssertTrue(came, "the first space came")
+        }
+        await app.flushProfile()
+        app.sync.end()
+        return (mac, copy, profile.folder)
+    }
+
+    /// The iPhone launched again on its saved profile, its line live.
+    private func relaunch(_ server: SyncMemoryServer, _ profileFolder: URL) async -> AppModel {
+        let profile = BrowserProfile(folder: profileFolder)
+        let app = AppModel(world: profile.world, fixturesEnabled: false, profile: profile)
+        app.sync.attach(app, setup: setup(server, ownWorld: false))
+        let live = await until(8) { app.sync.line == .live && app.sync.writing }
+        XCTAssertTrue(live, "\(app.sync.line)")
+        return app
+    }
+
+    /// The iPhone that made the second Personal puts its tabs into the
+    /// first space, pins pinned and kept kept, and deletes the copy on
+    /// every device. A pin the first space has already isn't doubled.
+    func testTheSecondPersonalABrokenJoinMadeGoesIntoTheFirst() async throws {
+        let server = SyncMemoryServer(), seal = Seal.make()
+        let (mac, copy, profile) = try await brokenJoin(server, seal)
+        XCTAssertEqual(spaceNames(mac), ["Personal", "Personal", "Work"], "the broken state")
+        let app = await relaunch(server, profile)
+        let repaired = await until(8) {
+            !mac.journal.living(SyncCollection.space).contains { $0.id == copy } && mac.pending == 0
+        }
+        XCTAssertTrue(repaired, "\(spaceNames(mac))")
+        await settle(mac, app)
+        XCTAssertEqual(spaceNames(mac), ["Personal", "Work"])
+        XCTAssertTrue(mac.row(copy).all.isEmpty, "nothing left under the copy")
+        let row = mac.row(first)
+        XCTAssertEqual(row.pins.filter { $0.url == Broken.pinned }.count, 1, "the pin once: \(row.pins.map(\.url))")
+        XCTAssertEqual(row.kept.map(\.url), [Broken.kept], "kept stays kept")
+        XCTAssertEqual(row.today.map(\.url), [Broken.today])
+        XCTAssertEqual(row.today.first?.device, app.sync.engine?.device, "today's stays this iPhone's")
+        XCTAssertEqual(app.browser.spaces.filter { !$0.isPrivate }.map(\.name).sorted(), ["Personal", "Work"])
+        let here = try XCTUnwrap(app.browser.space(app.sync.localID(first)))
+        XCTAssertEqual(here.keptTabs.map(\.url), [Broken.kept])
+        XCTAssertEqual(here.today.compactMap(\.url), [Broken.today])
+        XCTAssertEqual(here.pins.compactMap(\.url), [Broken.pinned])
+        XCTAssertEqual(app.browser.spaceID, here.id, "the space in front was the copy: the first comes in front")
+
+        XCTAssertFalse(app.sync.repairJoinDuplicate(), "a second run finds nothing")
+        XCTAssertEqual(app.sync.engine?.journal.pending(limit: 100).count, 0, "and writes nothing")
+        app.sync.end()
+    }
+
+    /// Two iPhones and a Mac: the second iPhone took the copy in, then was
+    /// away while the first repaired it. Back with its stale journal, it
+    /// tidies after the repair: no tab is lost and the copy stays gone.
+    func testAnotherIPhonesStaleCopyLosesNoTabAndRevivesNoSpace() async throws {
+        let server = SyncMemoryServer(), seal = Seal.make()
+        let (mac, copy, profile) = try await brokenJoin(server, seal)
+        let other = folder.appendingPathComponent("other")
+        let b = try await phone(server, seal, world: startWorld(), fixturesEnabled: false, home: other)
+        let took = await until {
+            Set(b.browser.space(copy)?.allTabs.compactMap(\.url) ?? []).isSuperset(of: [Broken.pinned, Broken.kept])
+        }
+        XCTAssertTrue(took, "the other iPhone has the copy's shared tabs: \(b.browser.spaces.map(\.name))")
+        XCTAssertFalse(b.sync.repairJoinDuplicate(), "not its copy")
+        b.sync.end()
+
+        let a = await relaunch(server, profile)
+        let repaired = await until(8) { !mac.journal.living(SyncCollection.space).contains { $0.id == copy } && mac.pending == 0 }
+        XCTAssertTrue(repaired, "\(spaceNames(mac))")
+
+        let back = try await phone(server, seal, world: startWorld(), fixturesEnabled: false, home: other)
+        let listed = await until { back.sync.engine?.roster != nil }
+        XCTAssertTrue(listed, "the device list read: the tidy ran")
+        await settle(mac, a, back)
+        XCTAssertEqual(spaceNames(mac), ["Personal", "Work"], "the copy isn't back")
+        XCTAssertTrue(mac.row(copy).all.isEmpty)
+        let row = mac.row(first)
+        XCTAssertEqual(row.pins.filter { $0.url == Broken.pinned }.count, 1, "\(row.pins.map(\.url))")
+        XCTAssertEqual(row.kept.map(\.url), [Broken.kept])
+        XCTAssertEqual(row.today.map(\.url), [Broken.today])
+        for app in [a, back] {
+            XCTAssertNil(app.browser.space(copy))
+            XCTAssertEqual(app.browser.spaces.filter { !$0.isPrivate }.map(\.name).sorted(), ["Personal", "Work"])
+            XCTAssertEqual(app.browser.space(app.sync.localID(first))?.keptTabs.map(\.url), [Broken.kept])
+        }
+        a.sync.end()
+        back.sync.end()
+    }
+
+    /// Launched again, the iPhone leaves the copy and every page in it.
+    private func copyStays(_ server: SyncMemoryServer, _ mac: TestMac, _ copy: String, _ profile: URL,
+                           _ why: String, line: UInt = #line) async throws {
+        let app = await relaunch(server, profile)
+        XCTAssertFalse(app.sync.repairJoinDuplicate(), why, line: line)
+        await settle(mac, app)
+        let journal = try XCTUnwrap(app.sync.engine?.journal)
+        XCTAssertTrue(journal.living(SyncCollection.space).contains { $0.id == copy }, why, line: line)
+        XCTAssertTrue(mac.journal.living(SyncCollection.space).contains { $0.id == copy }, why, line: line)
+        XCTAssertEqual(Set(mac.row(copy).all.map(\.url)).intersection(Broken.urls), Set(Broken.urls), why, line: line)
+        app.sync.end()
+    }
+
+    func testARenamedStartingSpaceIsNotTakenForTheSecondPersonal() async throws {
+        let server = SyncMemoryServer(), seal = Seal.make()
+        let (mac, copy, profile) = try await brokenJoin(server, seal) { app in
+            app.browser.setSpace(BrowserProfile.startSpace, name: "Reading")
+        }
+        try await copyStays(server, mac, copy, profile, "renamed, it is a space of the person's own")
+        XCTAssertEqual(spaceNames(mac), ["Personal", "Reading", "Work"])
+    }
+
+    func testASecondPersonalWithItsOwnSignInsStays() async throws {
+        let server = SyncMemoryServer(), seal = Seal.make()
+        let (mac, copy, profile) = try await brokenJoin(server, seal) { app in
+            app.browser.setSpaceSignIns(BrowserProfile.startSpace, own: true)
+        }
+        try await copyStays(server, mac, copy, profile, "its own sign-ins would go with it")
+    }
+
+    func testASecondPersonalWithAnotherDevicesTabOfTodayStays() async throws {
+        let server = SyncMemoryServer(), seal = Seal.make()
+        let (mac, copy, profile) = try await brokenJoin(server, seal)
+        try mac.write(SyncCollection.tab, "AAAAAAAA-0000-4000-8000-0000000000C1",
+                      SyncTab(id: "AAAAAAAA-0000-4000-8000-0000000000C1", space: copy, order: "Z", url: "https://example.org/theirs",
+                              title: "Theirs", device: "other-iphone").fields)
+        _ = await until { mac.pending == 0 }
+        try await copyStays(server, mac, copy, profile, "another device's tab of today is theirs")
+        XCTAssertTrue(mac.row(copy).today.contains { $0.url == "https://example.org/theirs" })
+    }
+
+    func testNoRepairUntilTheAccountsFirstSpaceIsIn() async throws {
+        let server = SyncMemoryServer(), seal = Seal.make()
+        let (mac, copy, profile) = try await brokenJoin(server, seal, firstComes: false)
+        try await copyStays(server, mac, copy, profile, "nowhere to put its tabs")
+        XCTAssertEqual(spaceNames(mac), ["Personal", "Work"])
+    }
+
     // MARK: - joining again (register row 385)
 
     private func living(_ mac: TestMac) -> [SyncTab] { mac.journal.living(SyncCollection.tab).compactMap(SyncTab.init) }

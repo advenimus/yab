@@ -989,6 +989,7 @@ final class SyncBridge {
             // Caught up: a joining iPhone takes the account's spaces now,
             // and from here on writes its own.
             takeAccount()
+            repairJoinDuplicate()
             pruneEmptyPersonals()
             countPending()
             wantsHandoff = true
@@ -1579,13 +1580,16 @@ final class SyncBridge {
     }
 
     /// `first` with the starting space's tabs at the end of their lists:
-    /// preserving pins and kept tabs. Blank
-    /// new tabs stay behind; the one in front stays in front.
+    /// preserving pins and kept tabs. Blank new tabs and a pin `first`
+    /// already has at that address stay behind; the one in front stays in front.
     static func merged(_ start: Space, into first: Space) -> Space {
         var out = first
         let have = Set(first.allTabs.map(\.id))
+        let pinned = Set(first.pins.map { address($0.url ?? "") })
         for tab in start.keptTabs where !isBlank(tab) && !have.contains(tab.id) { out.kept.append(.tab(tab)) }
-        for tab in start.pins where !tab.isPrivate && !isBlank(tab) && !have.contains(tab.id) { out.pins.append(tab) }
+        for tab in start.pins where !tab.isPrivate && !isBlank(tab) && !have.contains(tab.id) && !pinned.contains(address(tab.url ?? "")) {
+            out.pins.append(tab)
+        }
         for tab in start.today where !isBlank(tab) && !have.contains(tab.id) { out.today.append(tab) }
         out.placeTabs()
         if let current = start.current, out.tab(current) != nil { out.current = current }
@@ -1757,6 +1761,56 @@ final class SyncBridge {
             }
         }
         for id in doomed { deleteSpace(ids.local(id)) }
+    }
+
+    /// The second Personal a broken join made: the starting Personal went
+    /// up under an id of its own (`start`, this iPhone's mapping of it)
+    /// because the account's first space wasn't in yet. Only the iPhone
+    /// that made it has that mapping, so only it acts: two devices moving
+    /// and deleting at once could lose a tab, a tab's removal winning. It
+    /// is the copy only while still called Personal with the house, with
+    /// no sign-ins or folders of its own, and every page in it pinned,
+    /// kept or this iPhone's of today. Pure, for the tests: the synced id.
+    static func joinDuplicate(_ mirror: SyncMirror, start: String?) -> String? {
+        guard let start, mirror.spaces.values.contains(where: \.isFirst),
+              let copy = mirror.spaces[start], !copy.isFirst, !copy.ownSignIns,
+              copy.name.trimmingCharacters(in: .whitespaces) == "Personal", SpaceSymbols.emoji(copy.icon) == "🏠" else { return nil }
+        let row = mirror.row(start)
+        guard row.folders.isEmpty, row.elsewhere.allSatisfy({ blankURL($0.url) }) else { return nil }
+        return start
+    }
+
+    /// Once a line is caught up: the second Personal a broken join made
+    /// (joinDuplicate) gives its tabs to the first space, pins pinned and
+    /// kept kept, and goes on every device once nothing of it is left in
+    /// the journal. Run on each launch: after the delete it finds nothing.
+    @discardableResult
+    func repairJoinDuplicate() -> Bool {
+        guard let app, !app.isFixture, writing, line == .live, let engine,
+              let copy = Self.joinDuplicate(mirror, start: ids.known(BrowserProfile.startSpace)) else { return false }
+        let local = ids.local(copy), firstLocal = ids.local(SyncCollection.firstSpace)
+        guard let space = app.browser.space(local), !space.isPrivate, space.folders.isEmpty,
+              let target = app.browser.space(firstLocal) else { return false }
+        let merged = Self.merged(space, into: target)
+        // What stays behind is nothing: blank tabs, a pin the first space had.
+        var left = space
+        left.pins = space.pins.filter(Self.isBlank)
+        left.kept = space.kept.filter { if case let .tab(tab) = $0 { return Self.isBlank(tab) }; return false }
+        left.today = space.today.filter(Self.isBlank)
+        left.current = nil
+        let showing = app.browser.spaceID == local
+        app.browser.adopt(app.browser.spaces.map { $0.id == firstLocal ? merged : $0.id == local ? left : $0 })
+        if showing { app.browser.showSpace(firstLocal) }
+        for tab in space.allTabs where merged.tab(tab.id) == nil && left.tab(tab.id) == nil { app.pages.forget(tab.id) }
+        flushLocal()
+        let row = engine.row(copy)
+        guard row.folders.isEmpty, (row.all + row.elsewhere).allSatisfy({ Self.blankURL($0.url) }) else {
+            log.notice("sync: the second Personal still holds tabs; its delete waits")
+            return true
+        }
+        log.notice("sync: moved the second Personal a broken join made into the first space")
+        deleteSpace(local)
+        return true
     }
 
     /// The Mac's first space is where everything was before: it stays, as
