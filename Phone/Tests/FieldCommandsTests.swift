@@ -173,6 +173,8 @@ final class FieldCommandsTests: XCTestCase {
         widen()
         app.workspace.tabletControls = true
         app.workspace.preferences.sidebarShown = true
+        // Nothing downloaded, whatever an earlier run left in the folder.
+        app.downloads.pretend([])
         openPage()
         let row = try XCTUnwrap(commands("show downloads").first)
         let asked = app.workspace.downloadsShown
