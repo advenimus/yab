@@ -90,6 +90,46 @@ final class PageMenuTests: XCTestCase {
         XCTAssertEqual(phone.contentMode("google.com", isPrivate: false), .desktop)
     }
 
+    /// One choice per site, default, desktop or mobile: each device reads it
+    /// against its own default (iPad: WebKit's recommended, iPhone: mobile).
+    func testASiteIsAskedForByItsOneChoiceOnEachDevice() {
+        let pad = SiteSettings(defaults: nil, prefersDesktop: true)
+        let phone = SiteSettings(defaults: nil, prefersDesktop: false)
+        XCTAssertEqual(pad.version("google.com", isPrivate: false), .automatic)
+        XCTAssertEqual(pad.contentMode("google.com", isPrivate: false), .recommended)
+        XCTAssertEqual(phone.contentMode("google.com", isPrivate: false), .mobile)
+        for settings in [pad, phone] {
+            settings.setVersion(.mobile, for: "google.com", isPrivate: false)
+            XCTAssertEqual(settings.contentMode("google.com", isPrivate: false), .mobile)
+            XCTAssertFalse(settings.desktop("google.com", isPrivate: false))
+            settings.setVersion(.desktop, for: "google.com", isPrivate: false)
+            XCTAssertEqual(settings.contentMode("google.com", isPrivate: false), .desktop)
+            XCTAssertTrue(settings.desktop("google.com", isPrivate: false))
+        }
+    }
+
+    /// Settings saved before the one choice (`desktop`, `mobile`) load as it.
+    func testSavedDesktopAndMobileSitesLoadAsTheirChoice() throws {
+        let suite = "yab.tests.siteVersion.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let saved = #"""
+        {"figma.com": {"zoom": 1.2, "desktop": true, "permissions": []},
+         "google.com": {"zoom": 1, "desktop": false, "mobile": true, "permissions": []},
+         "linear.app": {"zoom": 1.1, "desktop": false, "permissions": []}}
+        """#
+        defaults.set(Data(saved.utf8), forKey: "yab.siteSettings")
+        let settings = SiteSettings(defaults: defaults, prefersDesktop: true)
+        XCTAssertEqual(settings.version("figma.com", isPrivate: false), .desktop)
+        XCTAssertEqual(settings.zoom("figma.com", isPrivate: false), 1.2, accuracy: 0.001)
+        XCTAssertEqual(settings.version("google.com", isPrivate: false), .mobile)
+        XCTAssertEqual(settings.version("linear.app", isPrivate: false), .automatic)
+        settings.setZoom(1.3, for: "figma.com", isPrivate: false)
+        let again = SiteSettings(defaults: defaults, prefersDesktop: true)
+        XCTAssertEqual(again.version("figma.com", isPrivate: false), .desktop, "saved again in the new shape")
+        XCTAssertEqual(again.version("google.com", isPrivate: false), .mobile)
+    }
+
     func testWhatASiteAskedForIsSaidInAWordAndForgotten() {
         let settings = SiteSettings(defaults: nil)
         XCTAssertEqual(settings.asked([.camera], host: "meet.example", isPrivate: false), .prompt, "first time: iOS asks")
