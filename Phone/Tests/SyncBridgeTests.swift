@@ -772,6 +772,83 @@ final class SyncBridgeTests: XCTestCase {
         XCTAssertTrue(arrived, "the page went into the first space: \(mac.row(first).all.map(\.url))")
     }
 
+    /// The same catch-up cut after its first page (Work in, the first space
+    /// not yet), then a launch: the saved journal holds spaces, but they
+    /// are not the account yet. The launch waits for the whole catch-up,
+    /// and no second Personal is ever written.
+    func testALaunchAfterAnInterruptedFirstCatchUpWaitsForTheWholeOne() async throws {
+        let server = SyncMemoryServer(), seal = Seal.make()
+        let mac = try TestMac(server: server, seal: seal)
+        try mac.write(SyncCollection.space, work, SyncSpace(id: work, name: "Work", icon: "💼", order: "X").fields)
+        mac.client.start()
+        let up = await until { mac.client.state == .live && mac.pending == 0 }
+        XCTAssertTrue(up, "the Mac made the account: \(mac.client.state)")
+        for i in 0..<600 { try mac.write(SyncCollection.memory, "memory-\(i)", ["text": .string("note \(i)")]) }
+        _ = await until { mac.pending == 0 }
+        try mac.write(SyncCollection.space, first, SyncSpace(id: first, name: "Personal", icon: "🏠", order: "V").fields)
+        _ = await until { mac.pending == 0 }
+
+        let profile = BrowserProfile(folder: folder.appendingPathComponent("browser"))
+        let app = AppModel(world: profile.world, fixturesEnabled: false, profile: profile)
+        app.browser.open(PageFixtures.liveTab(for: URL(string: "https://example.com/before-join")!))
+        SyncKeychain.testing(folder: folder.appendingPathComponent("keys")).keep(seal, share: false)
+        server.catchUpPages = 1
+        app.sync.attach(app, setup: setup(server, ownWorld: false))
+        let half = await until { app.sync.engine?.journal.living(SyncCollection.space).contains { $0.id == self.work } == true }
+        XCTAssertTrue(half, "the first page came")
+        XCTAssertNotEqual(app.sync.line, .live)
+        XCTAssertFalse(app.sync.writing, "a page of the catch-up is not the account")
+        await app.flushProfile()
+        app.sync.end()
+
+        server.catchUpPages = nil
+        let again = await relaunch(server, profile.folder)
+        await settle(mac, again)
+        XCTAssertEqual(Set(mac.journal.all(SyncCollection.space).map(\.id)), [first, work], "no second Personal, not even for a moment")
+        XCTAssertEqual(again.browser.spaces.filter { !$0.isPrivate && $0.name == "Personal" }.count, 1)
+        let arrived = await until { mac.row(self.first).all.contains { $0.url == "https://example.com/before-join" } }
+        XCTAssertTrue(arrived, "the page went into the first space: \(mac.row(first).all.map(\.url))")
+        again.sync.end()
+    }
+
+    /// An iPhone that has been in the account takes it at once on a launch
+    /// with no network: caught up once is enough, and so is an association
+    /// saved before the mark was kept (an install joined on an older build).
+    func testAJoinedIPhoneTakesTheAccountOfflineOldInstallsToo() async throws {
+        let server = SyncMemoryServer(), seal = Seal.make()
+        let mac = try await macWithWork(server, seal)
+        let profile = BrowserProfile(folder: folder.appendingPathComponent("browser"))
+        let app = AppModel(world: profile.world, fixturesEnabled: false, profile: profile)
+        app.browser.open(PageFixtures.liveTab(for: URL(string: "https://example.com/joined")!))
+        SyncKeychain.testing(folder: folder.appendingPathComponent("keys")).keep(seal, share: false)
+        app.sync.attach(app, setup: setup(server, ownWorld: false))
+        let joined = await until(8) { app.sync.line == .live && app.sync.writing }
+        XCTAssertTrue(joined, "\(app.sync.line)")
+        await settle(mac, app)
+        await app.flushProfile()
+        app.sync.end()
+        server.cut()
+
+        let offline = { () async -> AppModel in
+            let saved = BrowserProfile(folder: profile.folder)
+            let back = AppModel(world: saved.world, fixturesEnabled: false, profile: saved)
+            back.sync.attach(back, setup: self.setup(server, ownWorld: false))
+            let took = await self.until { back.sync.writing }
+            XCTAssertTrue(took, "the account taken from the saved journal")
+            XCTAssertNotEqual(back.sync.line, .live)
+            back.sync.end()
+            return back
+        }
+        _ = await offline()
+
+        let saved = folder.appendingPathComponent("journal/browser-ids.json")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: saved)) as? [String: Any])
+        XCTAssertNotNil(json["caughtUp"], "the mark is kept with the association")
+        json["caughtUp"] = nil
+        try JSONSerialization.data(withJSONObject: json).write(to: saved)
+        _ = await offline()
+    }
+
     /// The same iPhone installed three times (each a new journal and
     /// device, as a deleted app comes back): the account keeps one Personal.
     func testReinstallsAddNoPersonal() async throws {

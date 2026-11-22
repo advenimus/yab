@@ -909,7 +909,12 @@ final class SyncBridge {
             UserDefaults.standard.set(person, forKey: DailyActivity.personKey)
         }
         ready = true
-        if !mirror.spaces.isEmpty || setup?.seed == true {
+        // A journal left by a first catch-up cut short holds a page of the
+        // account (Work before the first space), not the account: taking it
+        // then sent the starting Personal up as a second one. Fixture worlds
+        // keep no association to hold the mark, and take theirs as before.
+        let caughtUp = ids.caughtUp || app?.isFixture != false
+        if (!mirror.spaces.isEmpty && caughtUp) || setup?.seed == true {
             // The seed: the world is this iPhone's own, it all goes up as changes.
             takeAccount()
         }
@@ -987,8 +992,13 @@ final class SyncBridge {
         case .live:
             offline = false
             // Caught up: a joining iPhone takes the account's spaces now,
-            // and from here on writes its own.
+            // and from here on writes its own. Kept, so a launch takes the
+            // account from the journal before the line is back.
+            ids.markCaughtUp()
             takeAccount()
+            do { try ids.persist() } catch {
+                log.error("sync keep caught up: \(String(describing: error), privacy: .public)")
+            }
             repairJoinDuplicate()
             pruneEmptyPersonals()
             countPending()
@@ -2988,6 +2998,9 @@ nonisolated struct IDs: Sendable {
     /// Which sweep of the account's duplicate spaces this iPhone has run
     /// (SyncBridge.duplicateSpaces): each runs once an account.
     private(set) var swept = 0
+    /// This iPhone has caught up with the account once: its journal holds the
+    /// account, not a page of a first catch-up cut short.
+    private(set) var caughtUp = false
 
     private struct Saved: Codable {
         var account: String
@@ -2995,6 +3008,7 @@ nonisolated struct IDs: Sendable {
         var device: String?
         var former: [String]?
         var swept: Int?
+        var caughtUp: Bool?
     }
 
     init() {}
@@ -3015,6 +3029,9 @@ nonisolated struct IDs: Sendable {
         toLocal = Dictionary(uniqueKeysWithValues: toSync.map { ($0.value, $0.key) })
         former = Set(saved.former ?? [])
         swept = saved.swept ?? 0
+        // Saved before the mark was kept: written only once the iPhone wrote
+        // into the account, which it did after catching up.
+        caughtUp = saved.caughtUp ?? true
         if let before = saved.device, let device, before != device {
             former.insert(before)
             rejoined = true
@@ -3033,7 +3050,7 @@ nonisolated struct IDs: Sendable {
         guard dirty, let file else { return }
         let data = try JSONEncoder().encode(Saved(account: account, mapping: toSync, device: device,
                                                   former: former.isEmpty ? nil : former.sorted(),
-                                                  swept: swept == 0 ? nil : swept))
+                                                  swept: swept == 0 ? nil : swept, caughtUp: caughtUp))
         try data.write(to: file, options: .atomic)
         dirty = false
         rejoined = false
@@ -3050,6 +3067,13 @@ nonisolated struct IDs: Sendable {
     }
 
     func local(_ synced: String) -> String { toLocal[synced] ?? synced }
+
+    /// The line reached live once: a launch takes the account from the journal.
+    mutating func markCaughtUp() {
+        guard !caughtUp else { return }
+        caughtUp = true
+        dirty = true
+    }
 
     /// The sweep `version` ran for this account; written with the association.
     mutating func markSwept(_ version: Int) {
