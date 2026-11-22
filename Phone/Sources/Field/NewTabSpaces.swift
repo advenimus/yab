@@ -1669,7 +1669,7 @@ final class CardPullView: UIView {
 
 /// A hold on a tab's row or pin: the column's hold, iOS's own way. The row
 /// lifts with its page's picture over it, the column's menu under it (Copy
-/// Link, Share, Open on Mac; Keep or Unkeep, Move to Space, Ask About Page;
+/// Link, Duplicate Tab, Share, Open on Mac; Keep or Unkeep, Move to Space, Ask About Page;
 /// Close Tab), each with the column's glyph.
 struct TabHold: ViewModifier {
     @Environment(AppModel.self) private var app
@@ -1691,15 +1691,8 @@ struct TabHold: ViewModifier {
     @ViewBuilder private func menu(_ tab: Tab) -> some View {
         let column = ColumnState.of(app)
         Section {
-            if app.workspace.canSplit, !tab.isPrivate, !tab.isMail, tab.id != app.browser.tab?.id, app.browser.space.tab(tab.id) != nil {
-                item("Split View", .yabSplitPlus) { app.openTabBeside(tab) }
-            }
-            item("Copy Link", .link) { app.copyLink(of: tab) }
-            item("Share", .yabShare) { app.share(tab) }
-            if !tab.isPrivate {
-                item("Open on Mac", .yabLaptopRight) {
-                    if app.isFixture { app.say("Opened on \(app.macName)", glyph: .macbook) } else { app.sync.openOnMac(tab) }
-                }
+            ForEach(Self.pageItems(tab, app: app), id: \.title) { page in
+                item(page.title, page.glyph, action: page.run)
             }
         }
         if !tab.isPrivate {
@@ -1743,6 +1736,33 @@ struct TabHold: ViewModifier {
 
     private func glyph(_ name: MacGlyph) -> Image {
         UIImage.menuGlyph(name).map { Image(uiImage: $0) } ?? Image(systemName: "circle")
+    }
+
+    /// One row of a hold menu's first section.
+    struct PageItem {
+        let title: String
+        let glyph: MacGlyph
+        let run: @MainActor () -> Void
+    }
+
+    /// The first section of a hold on a tab, a row's or a pin's (PinHold):
+    /// Split View, Copy Link, Duplicate Tab, Share, Open on Mac.
+    static func pageItems(_ tab: Tab, app: AppModel) -> [PageItem] {
+        var items: [PageItem] = []
+        if app.workspace.canSplit, !tab.isPrivate, !tab.isMail, tab.id != app.browser.tab?.id, app.browser.space.tab(tab.id) != nil {
+            items.append(PageItem(title: "Split View", glyph: .yabSplitPlus) { app.openTabBeside(tab) })
+        }
+        items.append(PageItem(title: "Copy Link", glyph: .link) { app.copyLink(of: tab) })
+        if !tab.isMail, tab.navigationURL != nil {
+            items.append(PageItem(title: "Duplicate Tab", glyph: .yabTabPlus) { app.duplicateFromHold(tab) })
+        }
+        items.append(PageItem(title: "Share", glyph: .yabShare) { app.share(tab) })
+        if !tab.isPrivate {
+            items.append(PageItem(title: "Open on Mac", glyph: .yabLaptopRight) {
+                if app.isFixture { app.say("Opened on \(app.macName)", glyph: .macbook) } else { app.sync.openOnMac(tab) }
+            })
+        }
+        return items
     }
 
     /// Ask About Page: the tab in front, then the field to ask about it.
@@ -1864,6 +1884,14 @@ extension AppModel {
             return
         }
         show(SyncMapping.tab(synced, id: PageFixtures.newID(), old: nil, fixturesEnabled: fixturesEnabled), newTab: true)
+    }
+
+    /// Duplicate Tab on a hold: the copy in front, the field (where the
+    /// hold was) out of its way, as a Mac row's copy.
+    func duplicateFromHold(_ tab: Tab) {
+        field.forget()
+        closeFieldAfterChoice()
+        duplicate(tab)
     }
 
     /// Duplicate Tab on one of the Mac's rows: always a new copy in that

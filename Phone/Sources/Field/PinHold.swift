@@ -66,24 +66,15 @@ struct PinHold: UIViewControllerRepresentable {
         }
     }
 
-    /// TabHold's menu for a pin: Copy Link, Share, Open on Mac; Unpin, Move
-    /// to Space, Ask About Page; Close Tab, each with the column's glyph.
+    /// TabHold's menu for a pin: Copy Link, Duplicate Tab, Share, Open on Mac;
+    /// Unpin, Move to Space, Ask About Page; Close Tab, each with the
+    /// column's glyph.
     @MainActor static func menu(_ tab: Tab, app: AppModel) -> UIMenu {
         let column = ColumnState.of(app)
         func item(_ title: String, _ glyph: MacGlyph, _ run: @escaping () -> Void) -> UIAction {
             UIAction(title: title, image: UIImage.menuGlyph(glyph)) { _ in run() }
         }
-        var page: [UIMenuElement] = []
-        if app.workspace.canSplit, !tab.isPrivate, !tab.isMail, tab.id != app.browser.tab?.id, app.browser.space.tab(tab.id) != nil {
-            page.append(item("Split View", .yabSplitPlus) { app.openTabBeside(tab) })
-        }
-        page.append(item("Copy Link", .link) { app.copyLink(of: tab) })
-        page.append(item("Share", .yabShare) { app.share(tab) })
-        if !tab.isPrivate {
-            page.append(item("Open on Mac", .yabLaptopRight) {
-                if app.isFixture { app.say("Opened on \(app.macName)", glyph: .macbook) } else { app.sync.openOnMac(tab) }
-            })
-        }
+        let page = TabHold.pageItems(tab, app: app).map { item($0.title, $0.glyph, $0.run) }
         var sections = [UIMenu(options: .displayInline, children: page)]
         if !tab.isPrivate {
             var own: [UIMenuElement] = []
