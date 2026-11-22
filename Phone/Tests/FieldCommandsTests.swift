@@ -112,6 +112,20 @@ final class FieldCommandsTests: XCTestCase {
         XCTAssertEqual(app.browser.tab?.navigationURL, page)
     }
 
+    /// A command runs once: the field opened and closed again afterwards
+    /// doesn't run it a second time.
+    func testAChosenCommandRunsOnlyOnce() async throws {
+        openPage()
+        let before = app.browser.space.allTabs.count
+        app.choose(try XCTUnwrap(commands("duplicate tab").first))
+        try await until { app.browser.space.allTabs.count == before + 1 }
+        app.surfaces.openField(.address)
+        app.field.close()
+        try await until { !app.field.shown && app.surfaces.field == nil }
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertEqual(app.browser.space.allTabs.count, before + 1, "one copy, not two")
+    }
+
     func testPrivateOffersOnlyWhatItCanRunAndRunsIt() async throws {
         widen()
         openPage(privately: true)
