@@ -26,7 +26,7 @@ struct SettingsDevice: Equatable, Sendable, Identifiable {
             let here = device.id == own
             let mac = macs.first { $0.id == device.id }
             let said = mac.flatMap { $0.state.isUp ? nil : MacWords.state($0.state, now: now) }
-            return SettingsDevice(id: device.id, name: device.name.isEmpty ? (device.isPhone ? "iPhone" : "Mac") : device.name,
+            return SettingsDevice(id: device.id, name: device.name.isEmpty ? (device.isPhone ? (device.model.hasPrefix("iPad") ? "iPad" : "iPhone") : "Mac") : device.name,
                                   isPhone: device.isPhone, isThis: here,
                                   words: here ? "This \(DeviceWord.name)" : said ?? words(lastSeen: device.lastSeen, now: now))
         }.sorted { ($0.isThis ? 0 : 1) < ($1.isThis ? 0 : 1) }
