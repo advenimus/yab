@@ -181,10 +181,12 @@ final class SiteSettings {
         contentMode(host, isPrivate: isPrivate) != .mobile
     }
 
-    /// Turning the switch back to the device's default forgets the choice.
+    /// An iPhone's switch turned back to mobile forgets the choice. An
+    /// iPad's default is WebKit's recommended mode, mobile in a narrow pane,
+    /// so a desktop asked for there is kept as desktop.
     func setDesktop(_ desktop: Bool, for host: String?, isPrivate: Bool) {
         let asked: Version = desktop ? .desktop : .mobile
-        setVersion(desktop == prefersDesktop ? .automatic : asked, for: host, isPrivate: isPrivate)
+        setVersion(!desktop && !prefersDesktop ? .automatic : asked, for: host, isPrivate: isPrivate)
     }
 
     /// What WebKit is asked for: the one place the choice is read. An iPad
