@@ -219,7 +219,7 @@ final class WebPool: NSObject {
         // WebKit's player offers Picture in Picture, inline video too, and a
         // playing video goes on in it with Yab away (PagePlayback).
         configuration.allowsPictureInPictureMediaPlayback = true
-        configuration.defaultWebpagePreferences.preferredContentMode = Self.defaultContentMode
+        configuration.defaultWebpagePreferences.preferredContentMode = SiteSettings.defaultContentMode(prefersDesktop: SiteSettings.devicePrefersDesktop)
         // Every page zooms with two fingers, paying no mind to a page's
         // user-scalable=no or maximum-scale: Google Images'
         // viewer says both, so its picture could not be pinched larger.
