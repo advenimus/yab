@@ -4,10 +4,10 @@ import Foundation
 /// menu action that has no key, as the Mac's field finds both.
 enum FieldCommand: Hashable, Sendable {
     case key(BrowserKey)
-    case savePDF, duplicateTab, splitView, download, showDownloads
+    case savePDF, duplicateTab, splitView, separateSplit, closeSplit, download, showDownloads
 
     static let all: [FieldCommand] = BrowserKey.all.filter(\.commandable).map { .key($0) }
-        + [.savePDF, .duplicateTab, .splitView, .download, .showDownloads]
+        + [.savePDF, .duplicateTab, .splitView, .separateSplit, .closeSplit, .download, .showDownloads]
 
     /// What a row carries: spelled out, so renaming a case changes no row.
     var token: String {
@@ -16,6 +16,8 @@ enum FieldCommand: Hashable, Sendable {
         case .savePDF: "savePDF"
         case .duplicateTab: "duplicateTab"
         case .splitView: "splitView"
+        case .separateSplit: "separateSplit"
+        case .closeSplit: "closeSplit"
         case .download: "download"
         case .showDownloads: "showDownloads"
         }
@@ -32,6 +34,8 @@ enum FieldCommand: Hashable, Sendable {
         case .savePDF: "Save as PDF"
         case .duplicateTab: "Duplicate Tab"
         case .splitView: "Split View"
+        case .separateSplit: "Separate Split View"
+        case .closeSplit: "Close Split"
         case .download: "Download"
         case .showDownloads: "Show Downloads"
         }
@@ -43,6 +47,8 @@ enum FieldCommand: Hashable, Sendable {
         case .savePDF: ["pdf", "export pdf"]
         case .duplicateTab: ["copy tab", "clone tab"]
         case .splitView: ["open in split view", "side by side"]
+        case .separateSplit: ["leave split view", "unsplit"]
+        case .closeSplit: ["close split view", "close pane"]
         case .download: ["save file", "download file"]
         case .showDownloads: ["downloads", "downloaded files"]
         }
@@ -71,10 +77,18 @@ extension AppModel {
         case let .key(key): return offers(key)
         case .savePDF: return pageCanBeDrawn
         case .duplicateTab: return tab.map { !$0.isMail && $0.navigationURL != nil } ?? false
-        case .splitView: return workspace.canSplit && tab.map { !$0.isMail } == true && !pageIsPrivate
+        case .splitView: return splitRowsShown
+        case .separateSplit, .closeSplit: return splitRowsShown && workspace.paired
         case .download: return pageDownloadable
         case .showDownloads: return downloadsInReach
         }
+    }
+
+    /// The menus show their split rows (Split View, and with a split up
+    /// Separate Split View and Close Split) over an ordinary page in a
+    /// window wide enough for two.
+    var splitRowsShown: Bool {
+        workspace.canSplit && browser.tab.map { !$0.isMail } == true && !pageIsPrivate
     }
 
     /// A downloads list to open: on iPad a downloads button on screen (the
@@ -96,7 +110,7 @@ extension AppModel {
         switch command {
         // Show Downloads: Private's own list, over a private page.
         case .savePDF, .duplicateTab, .download, .showDownloads: return page
-        case .splitView: return false
+        case .splitView, .separateSplit, .closeSplit: return false
         case let .key(key):
             switch key {
             case .newPrivateTab, .toggleSidebar: return true
@@ -126,6 +140,8 @@ extension AppModel {
         case .savePDF: savePageAsPDF()
         case .duplicateTab: if let tab = browser.tab { duplicate(tab) }
         case .splitView: newTabBeside()
+        case .separateSplit: workspace.fullSpread()
+        case .closeSplit: closeWorkspacePage()
         case .download: downloadPage()
         case .showDownloads: showDownloads()
         }
