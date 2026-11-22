@@ -196,7 +196,8 @@ extension AppModel {
         switch key {
         case .newTab, .newPrivateTab, .settings: return true
         case .toggleSidebar: return workspace.tabletControls
-        case .allTabs, .zoomIn, .zoomOut, .actualSize, .copyLink, .print: return tab != nil
+        case .allTabs, .zoomIn, .zoomOut, .actualSize, .copyLink: return tab != nil
+        case .print: return pageCanBeDrawn
         case .stop: return tab != nil && currentPageState.isLoading
         case .reader: return tab != nil && (currentPageState.readerAvailable || currentPageState.readerEnabled)
         case .openLocation, .reload, .find: return tab != nil

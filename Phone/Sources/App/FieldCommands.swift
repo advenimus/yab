@@ -75,7 +75,7 @@ extension AppModel {
         let tab = browser.tab
         switch command {
         case let .key(key): return offers(key)
-        case .savePDF: return tab != nil
+        case .savePDF: return pageCanBeDrawn
         case .duplicateTab: return tab.map { !$0.isMail && $0.navigationURL != nil } ?? false
         case .splitView: return splitRowsShown
         case .separateSplit, .closeSplit: return splitRowsShown && workspace.paired

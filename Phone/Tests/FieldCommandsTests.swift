@@ -22,7 +22,9 @@ final class FieldCommandsTests: XCTestCase {
     }
 
     private func openPage(privately: Bool = false) {
-        app.browser.open(PageFixtures.liveTab(for: page, isPrivate: privately), deduplicate: false)
+        let tab = PageFixtures.liveTab(for: page, isPrivate: privately)
+        app.browser.open(tab, deduplicate: false)
+        _ = app.pages.view(for: tab)
         app.surfaces.openField(.address)
     }
 
@@ -133,6 +135,23 @@ final class FieldCommandsTests: XCTestCase {
         for name in ["reload page", "duplicate tab", "close tab", "copy link"] {
             XCTAssertTrue(commands(name).isEmpty, "\(name) would act on the ordinary page")
         }
+    }
+
+    /// Save as PDF and Print draw the page that is on screen: a tab whose
+    /// page isn't loaded yet (a restored tab, a Mac's) has nothing to keep.
+    func testSaveAsPDFAndPrintAreOfferedOnlyWithAPageToDraw() throws {
+        let restored = Tab(id: "restored", title: "Restored", site: "Restored", icon: "globe", url: "https://example.com/r")
+        app.browser.open(restored, deduplicate: false)
+        app.surfaces.openField(.address)
+        XCTAssertNil(app.pages.liveView(restored.id), "nothing loaded it yet")
+        XCTAssertTrue(commands("save as pdf").isEmpty, "no page to save")
+        XCTAssertFalse(commands("print").contains { $0.title == "Print" }, "no page to print")
+        XCTAssertFalse(app.offers(.print), "the menu bar's Print waits too")
+
+        _ = app.pages.view(for: try XCTUnwrap(app.browser.tab))
+        XCTAssertEqual(commands("save as pdf").first?.title, "Save as PDF")
+        XCTAssertTrue(commands("print").contains { $0.title == "Print" })
+        XCTAssertTrue(app.offers(.print))
     }
 
     /// Download is offered only over a page that is a file WebKit shows, and
