@@ -1863,11 +1863,19 @@ extension AppModel {
         Motion.sheetGrow.run { surfaces.openSettings(keepingField: true) }
     }
 
+    /// A choice on a space page makes way: the open field forgets its words
+    /// and closes. The same pages stand in the iPad sidebar's popover, and
+    /// the field may still be flying home: closed, its kept words stay.
+    private func leaveFieldForChoice() {
+        guard surfaces.field != nil else { return }
+        field.forget()
+        closeFieldAfterChoice()
+    }
+
     /// A pin or a tab on a space's page: that space comes in front with it.
     func chooseFromSpacePage(_ id: Tab.ID, in space: Space.ID) {
         if browser.space(space)?.tab(id) == nil, sync.openSharedPin(id, in: space) { return }
-        field.forget()
-        closeFieldAfterChoice()
+        leaveFieldForChoice()
         if browser.spaceID != space { browser.showSpace(space) }
         browser.select(id)
     }
@@ -1876,8 +1884,7 @@ extension AppModel {
     /// copy of it at the top of this iPhone's Today in that space. The
     /// Mac's tab stays where it is.
     func openFromMac(_ synced: SyncTab, in space: Space.ID) {
-        field.forget()
-        closeFieldAfterChoice()
+        leaveFieldForChoice()
         if browser.spaceID != space { browser.showSpace(space) }
         if let here = browser.space.today.first(where: { !$0.isPrivate && $0.navigationURL?.absoluteString == synced.url }) {
             browser.select(here.id)
@@ -1889,8 +1896,7 @@ extension AppModel {
     /// Duplicate Tab on a hold: the copy in front, the field (where the
     /// hold was) out of its way, as a Mac row's copy.
     func duplicateFromHold(_ tab: Tab) {
-        field.forget()
-        closeFieldAfterChoice()
+        leaveFieldForChoice()
         duplicate(tab)
     }
 
@@ -1898,8 +1904,7 @@ extension AppModel {
     /// row's space. The Mac's tab has no tab here to open it from (openHeldLink).
     func duplicateFromMac(_ synced: SyncTab, in space: Space.ID) {
         guard browser.space(space)?.isPrivate == false else { return }
-        field.forget()
-        closeFieldAfterChoice()
+        leaveFieldForChoice()
         let copy = SyncMapping.tab(synced, id: PageFixtures.newID(), old: nil, fixturesEnabled: fixturesEnabled)
         browser.open(copy, in: space, deduplicate: false)
         profile?.capture(browser)

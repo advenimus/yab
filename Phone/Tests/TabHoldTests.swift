@@ -48,4 +48,25 @@ final class TabHoldTests: XCTestCase {
         app.browser.open(mail, deduplicate: false)
         XCTAssertFalse(TabHold.pageItems(mail, app: app).contains { $0.title == "Duplicate Tab" }, "Mail has no page to copy")
     }
+
+    /// With the field closed (the iPad's sidebar, or the field still on its
+    /// way back to the plate), Duplicate Tab leaves the words kept for New
+    /// Tab. Held in the open field, the field makes way for the copy.
+    func testDuplicateTabClearsTheFieldOnlyWhenItIsOpen() throws {
+        let held = Tab(id: "held", title: "Held", site: "Held", icon: "globe", url: "https://example.com/held")
+        app.browser.open(held, deduplicate: false)
+        app.surfaces.openField(.newTab)
+        app.field.typed("half a thought")
+        app.surfaces.closeField()
+
+        let duplicate = try XCTUnwrap(TabHold.pageItems(held, app: app).first { $0.title == "Duplicate Tab" })
+        duplicate.run()
+        XCTAssertEqual(app.field.newTabWords, "half a thought", "a hold with the field closed keeps its words")
+
+        app.surfaces.openField(.newTab)
+        XCTAssertEqual(app.field.text, "half a thought")
+        duplicate.run()
+        XCTAssertNil(app.surfaces.field, "the open field makes way for the copy")
+        XCTAssertEqual(app.field.newTabWords, "", "and forgets what it held")
+    }
 }
