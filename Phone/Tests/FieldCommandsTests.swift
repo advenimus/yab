@@ -64,6 +64,43 @@ final class FieldCommandsTests: XCTestCase {
         XCTAssertTrue(commands("duplicate tab").isEmpty, "Mail has no page to copy")
     }
 
+    /// The split's own menu rows, Separate Split View and Close Split, are
+    /// found by name while a split is up, and do what their rows do.
+    func testTheSplitsOwnRowsRunFromTheFieldWhileASplitIsUp() async throws {
+        widen()
+        openPage()
+        XCTAssertTrue(commands("separate split view").isEmpty, "no split to separate")
+        XCTAssertTrue(commands("close split").isEmpty, "no split to close")
+        app.field.close()
+        let first = try XCTUnwrap(app.browser.tab?.id)
+        let second = Tab(id: "split-second", title: "Second", site: "Second", icon: "globe", url: "https://example.com/b")
+        app.browser.open(second, deduplicate: false)
+        app.workspace.openBeside(current: first, other: second.id)
+        XCTAssertTrue(app.workspace.paired)
+
+        app.surfaces.openField(.address)
+        let separate = try XCTUnwrap(commands("separate split view").first)
+        XCTAssertEqual(separate.title, "Separate Split View")
+        XCTAssertEqual(app.fieldRows.first?.action, separate.action, "typed whole, it leads the rows")
+        app.choose(separate)
+        try await until { !app.workspace.paired }
+        XCTAssertNotNil(app.browser.tab(first), "both pages stay open")
+        XCTAssertNotNil(app.browser.tab(second.id))
+
+        app.field.close()
+        try await until { app.surfaces.field == nil }
+        app.workspace.openBeside(current: first, other: second.id)
+        app.browser.select(second.id)
+        app.surfaces.openField(.address)
+        let close = try XCTUnwrap(commands("close split").first)
+        XCTAssertEqual(close.title, "Close Split")
+        XCTAssertEqual(app.fieldRows.first?.action, close.action, "typed whole, it leads the rows")
+        app.choose(close)
+        try await until { !app.workspace.paired }
+        XCTAssertNil(app.browser.tab(second.id), "the page in front closes")
+        XCTAssertNotNil(app.browser.tab(first), "its companion stays")
+    }
+
     func testDuplicateTabFromTheFieldOpensACopy() async throws {
         openPage()
         let before = app.browser.space.allTabs.count
@@ -77,7 +114,7 @@ final class FieldCommandsTests: XCTestCase {
         widen()
         openPage(privately: true)
         XCTAssertTrue(app.field.place.isPrivate)
-        for name in ["open in split view", "reopen closed tab", "show all tabs", "new tab"] {
+        for name in ["split view", "separate split view", "close split", "reopen closed tab", "show all tabs", "new tab"] {
             XCTAssertFalse(commands(name).contains { $0.title.lowercased() == name }, "\(name) leaves Private")
         }
         XCTAssertFalse(commands("reload page").isEmpty)
