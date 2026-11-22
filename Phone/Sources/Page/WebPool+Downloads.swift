@@ -43,7 +43,9 @@ extension WebPool {
             .trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("attachment") == true
         // A PDF or another document opens as a file, in the system's viewer,
         // which saves and shares it; WebKit's own view of it has neither.
+        // A site told no doesn't send files: its documents stay WebKit's own view.
         let opens = !attachment && response.isForMainFrame && PageDocument.opensInViewer(response.response.mimeType)
+            && !downloadsTurnedOff(tabsByView[ObjectIdentifier(webView)], file: response.response.url)
         guard attachment || opens || !response.canShowMIMEType else { return .allow }
         guard !fixturesEnabled, response.isForMainFrame, let id = tabsByView[ObjectIdentifier(webView)],
               canInteract(id, in: webView), downloadOrigins[id] != nil else {
@@ -57,6 +59,17 @@ extension WebPool {
             downloadConversions[id] = DownloadConversion(origin: origin, document: documents[id], navigation: activeNavigations[id], opens: opens)
         }
         return .download
+    }
+
+    /// The site the file would be asked about (adopt's source host) said no
+    /// to downloads. A private tab remembers no answer, so it never has.
+    private func downloadsTurnedOff(_ id: Tab.ID?, file: URL?) -> Bool {
+        guard let id, let siteSettings else { return false }
+        let page = committedURLs[id] == nil ? nil : downloadOrigins[id]?.url
+        let site = siteOf?(id, page)
+        if site?.isPrivate ?? privateTabs.contains(id) { return false }
+        let host = site?.host ?? page?.host() ?? file?.host()
+        return siteSettings.decision(.downloads, for: host, isPrivate: false) == .off
     }
 
     /// A file never becomes a phantom page/history entry. WebKit retains the

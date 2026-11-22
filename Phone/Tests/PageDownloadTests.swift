@@ -521,6 +521,22 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), before.entries.map(\.url))
     }
 
+    /// A site told no to downloads sends no file: its PDF shows in the tab,
+    /// as WebKit shows it, and nothing lands in Downloads.
+    func testASiteWithDownloadsOffShowsItsPDFInThePage() async throws {
+        let settings = SiteSettings(defaults: nil)
+        settings.setDecision(.off, .downloads, for: site.url("/page").host(), isPrivate: false)
+        pages.siteSettings = settings
+        var asked = 0
+        pages.onDownloadAsk = { _, answer in asked += 1; answer(false) }
+        let source = tab("download.pdf.off"), view = try await ready(source)
+        try await click(view, "pdf")
+        try await require({ view.url?.path() == "/doc.pdf" && !view.isLoading }, "the PDF did not show in its tab")
+        XCTAssertTrue(store.entries.isEmpty, "no file for a site with downloads off")
+        XCTAssertTrue(pages.transfers.isEmpty)
+        XCTAssertEqual(asked, 0)
+    }
+
     /// A tab whose first load is a PDF had no page to put back: the file
     /// still opens, rather than being dropped.
     func testAPDFAsATabsFirstLoadStillOpens() async throws {
