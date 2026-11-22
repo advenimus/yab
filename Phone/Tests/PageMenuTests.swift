@@ -82,12 +82,19 @@ final class PageMenuTests: XCTestCase {
         XCTAssertTrue(settings.desktop("figma.com", isPrivate: false), "only that site")
         settings.setDesktop(true, for: "google.com", isPrivate: false)
         XCTAssertTrue(settings.desktop("google.com", isPrivate: false))
-        XCTAssertTrue(settings.site("google.com", isPrivate: false).isEmpty, "back to the default, nothing kept")
+        // Asked for, it is the desktop site even in a pane narrow enough
+        // for WebKit's recommended mode to choose the mobile one.
+        XCTAssertEqual(settings.version("google.com", isPrivate: false), .desktop)
+        XCTAssertEqual(settings.contentMode("google.com", isPrivate: false), .desktop)
+        XCTAssertEqual(settings.contentMode("figma.com", isPrivate: false), .recommended, "a site never asked stays WebKit's")
 
         let phone = SiteSettings(defaults: nil, prefersDesktop: false)
         XCTAssertEqual(phone.contentMode("google.com", isPrivate: false), .mobile)
         phone.setDesktop(true, for: "google.com", isPrivate: false)
         XCTAssertEqual(phone.contentMode("google.com", isPrivate: false), .desktop)
+        phone.setDesktop(false, for: "google.com", isPrivate: false)
+        XCTAssertEqual(phone.contentMode("google.com", isPrivate: false), .mobile)
+        XCTAssertTrue(phone.site("google.com", isPrivate: false).isEmpty, "an iPhone's mobile is its default, nothing kept")
     }
 
     /// One choice per site, default, desktop or mobile: each device reads it
