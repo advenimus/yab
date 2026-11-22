@@ -324,15 +324,16 @@ extension AppModel {
     /// screen, landed on the plate, nothing left over the chrome. Its close
     /// takes one of several motions (landing, the sheet, the iPad's
     /// dialog), so it watches their shared end rather than one clock. A
-    /// field opened again before then drops it.
+    /// field opened again before then drops it. It watches only while the
+    /// field is still closing, so a run leaves no watch behind to run again.
     func afterFieldCloses(_ body: @escaping @MainActor () -> Void) {
         guard surfaces.field == nil else { return }
-        let closing = withObservationTracking {
-            field.shown || surfaces.coversChrome
+        guard field.shown || surfaces.coversChrome else { body(); return }
+        withObservationTracking {
+            _ = field.shown || surfaces.coversChrome
         } onChange: { [weak self] in
             Task { @MainActor in self?.afterFieldCloses(body) }
         }
-        if !closing { body() }
     }
 
     // MARK: - the page's card
