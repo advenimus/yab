@@ -330,7 +330,7 @@ that address isn't added twice. It waits for the whole catch-up: a
 catch-up page can bring Work before the first space. Before that wait, a
 join could put the starting Personal up as a second Personal under an id
 of its own. The device that made it repairs it on each launch once its
-line is caught up (`SyncBridge.joinDuplicate`, `repairJoinDuplicate`,
+line is caught up (`SyncBridge+JoinRepair.swift`: `joinDuplicate`, `repairJoinDuplicate`,
 beside the prune below). Only that device acts: its own
 `browser-ids.json` maps `local.personal` to the copy, and two devices
 moving and deleting at once could lose a tab (a tab's removal wins). All
