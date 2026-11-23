@@ -116,6 +116,7 @@ struct TabletWorkspaceView: View {
             AboutLayer()
             ReaderCardLayer()
             ToastLayer()
+            TabletDownloadFlights()
             AssistantApprovalLayer()
             if app.showsDesignSheet { DesignSheet() }
         }

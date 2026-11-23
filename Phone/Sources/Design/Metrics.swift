@@ -662,10 +662,39 @@ enum Metrics {
         static let downloadsInset: CGFloat = 8
         static let downloadDot: CGFloat = 7
         static let downloadDotInset: CGFloat = 9
+        /// The Mac's Hoard: the badge's ring round the button's mark, the
+        /// disc a file is thrown as, how far it rises and how high it arcs.
+        static let downloadRing: CGFloat = 26
+        static let downloadRingLine: CGFloat = 2
+        static let downloadDisc: CGFloat = 24
+        static let downloadRise: CGFloat = 6
+        static let downloadArcHeight: CGFloat = 90
+        /// A button more than this far above where the file rose is a high
+        /// one: the file goes most of the way along, a little up, then up.
+        static let downloadHighButton: CGFloat = 40
+        static let downloadHighAlong: CGFloat = 0.7
+        static let downloadHighRise: CGFloat = 10
+        /// The button's mark: the last file's, else the downloads arrow.
+        static let downloadMark: CGFloat = 19
         static let downloadIdleMark: CGFloat = 17
+        static let downloadRingTrack: Double = 0.15
         static let downloadsTitleFont: CGFloat = 13
         static let downloadsTitleInset: CGFloat = 6
         static let downloadsTitleVertical: CGFloat = 10
+        /// The thrown file's glow (its colors are Ink.downloadDisc*).
+        static let downloadDiscGlowOpacity: Double = 0.55
+        static let downloadDiscGlowRadius: CGFloat = 5
+
+        /// The disc's arrow, drawn on the Mac's 19-point grid and scaled to the disc.
+        enum DownloadArrow {
+            static let grid: CGFloat = 19
+            static let shaftTop = CGPoint(x: 9.5, y: 5)
+            static let shaftBottom = CGPoint(x: 9.5, y: 13.4)
+            static let headLeft = CGPoint(x: 6, y: 10.2)
+            static let headTip = CGPoint(x: 9.5, y: 13.6)
+            static let headRight = CGPoint(x: 13, y: 10.2)
+            static let line: CGFloat = 1.7
+        }
         static let pinGap: CGFloat = 7
         static let pinMinWidth: CGFloat = 47
         static let pinMaxColumns = 4

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Observation
 
@@ -57,6 +58,14 @@ final class DownloadStore {
     /// The last file in. The phone's Now line says it for `flashTime`; the
     /// iPad's button keeps a done file's icon until it is seen.
     private(set) var arrival: Arrival?
+    /// Files thrown at the iPad's downloads button from where they were
+    /// pressed, until they land (TabletDownloadFlights).
+    private(set) var flights: [Flight] = []
+    /// Counts arrivals: the iPad's button gives a little each time.
+    private(set) var bumps = 0
+    /// Something on screen flies files (the iPad's TabletDownloadFlights);
+    /// the phone's Now line says it instead.
+    @ObservationIgnored var flies = false
 
     /// One fact for every screen: each decides how long it shows it.
     struct Arrival: Equatable {
@@ -70,6 +79,15 @@ final class DownloadStore {
         var at: Date?
         /// The Now line's moment is over.
         var said = false
+    }
+
+    struct Flight: Identifiable, Equatable {
+        let id: UUID
+        /// In the window.
+        let from: CGPoint
+        let name: String
+        /// Test states: stays this far along its arc, never landing.
+        var held: CGFloat? = nil
     }
 
     struct Control {
@@ -170,8 +188,10 @@ final class DownloadStore {
 
     /// A transfer starts, or starts again under a failed row (same `id`).
     /// A private row stays private, whatever the new transfer says.
-    func begin(_ id: UUID, name: String, host: String, total: Int64?, isPrivate: Bool, control: Control) {
+    /// `from`: where it was pressed, in the window, when that is fresh.
+    func begin(_ id: UUID, name: String, host: String, total: Int64?, isPrivate: Bool, control: Control, from: CGPoint? = nil) {
         controls[id] = control
+        if let from, flies { flights.append(Flight(id: id, from: from, name: name)) } else { bumps += 1 }
         let at = entries.firstIndex(where: { $0.id == id })
         let entry = DownloadEntry(id: id, name: name, host: SiteSettings.key(host) ?? host, size: total ?? 0, date: Date(),
                                   state: .running(received: 0, total: total), isPrivate: isPrivate || at.map { entries[$0].isPrivate } == true)
@@ -243,6 +263,7 @@ final class DownloadStore {
         controls[id] = nil
         entries.removeAll { $0.id == id }
         if arrival?.id == id { clearArrival() }
+        flights.removeAll { $0.id == id }
         withdraw(id)
     }
 
@@ -272,6 +293,7 @@ final class DownloadStore {
         asks.filter(\.isPrivate).forEach { answer($0.id, false) }
         let gone = Set(entries.filter(\.isPrivate).map(\.id))
         entries.removeAll(where: \.isPrivate)
+        flights.removeAll { gone.contains($0.id) }
         if let arrival, gone.contains(arrival.id) { clearArrival() }
         try? FileManager.default.removeItem(at: privateFolder)
     }
@@ -304,6 +326,12 @@ final class DownloadStore {
     func listOpened(isPrivate: Bool) {
         guard let arrival, entry(arrival.id)?.isPrivate == isPrivate else { return }
         seen(arrival.id)
+    }
+
+    /// A file flown in has reached the button.
+    func landed(_ id: UUID) {
+        flights.removeAll { $0.id == id }
+        bumps += 1
     }
 
     /// The file opened, or a list that shows it did: the button is itself
@@ -365,6 +393,11 @@ final class DownloadStore {
     }
 
     func pretend(ask: DownloadAsk) { asks = [ask] }
+
+    /// A file in the air, still at `held` of its way to the button.
+    func pretend(flight name: String, from: CGPoint, held: CGFloat) {
+        flights = [Flight(id: UUID(), from: from, name: name, held: held)]
+    }
 }
 
 extension DownloadStore {

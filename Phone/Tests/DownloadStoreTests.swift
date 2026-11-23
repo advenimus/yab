@@ -120,6 +120,27 @@ final class DownloadStoreTests: XCTestCase {
         XCTAssertTrue(store.list(isPrivate: false).isEmpty)
     }
 
+    /// The iPad's button: a file pressed for flies from where it was held,
+    /// only where something draws the flight; one with no place only bumps.
+    func testAFileFliesFromWhereItWasHeldOnlyWhereFlightsAreDrawn() {
+        let store = store()
+        let at = CGPoint(x: 120, y: 340)
+        store.begin(UUID(), name: "a.pdf", host: "acme.com", total: nil, isPrivate: false, control: .init(), from: at)
+        XCTAssertTrue(store.flights.isEmpty, "the phone's Now line says it instead")
+        XCTAssertEqual(store.bumps, 1)
+        store.flies = true
+        let thrown = UUID()
+        store.begin(thrown, name: "b.pdf", host: "acme.com", total: nil, isPrivate: false, control: .init(), from: at)
+        XCTAssertEqual(store.flights, [DownloadStore.Flight(id: thrown, from: at, name: "b.pdf")])
+        XCTAssertEqual(store.bumps, 1, "no bump until it lands")
+        store.landed(thrown)
+        XCTAssertTrue(store.flights.isEmpty)
+        XCTAssertEqual(store.bumps, 2)
+        store.begin(UUID(), name: "c.pdf", host: "acme.com", total: nil, isPrivate: false, control: .init())
+        XCTAssertTrue(store.flights.isEmpty, "no place held: the button only gives")
+        XCTAssertEqual(store.bumps, 3)
+    }
+
     /// One fact, the last file in: the iPad's button keeps a done file's
     /// icon, with no timer, until the list or the file opens, or the file goes.
     func testTheLastFileWaitsUntilSeen() throws {

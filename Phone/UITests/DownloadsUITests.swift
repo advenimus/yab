@@ -150,10 +150,12 @@ final class DownloadsUITests: XCTestCase {
         if tablet {
             // A tap as a popover finishes going can be UIKit's, not the
             // page's: one more, as hold does for a lost press.
-            if !wait(5, { self.sidebarDownloads.value as? String == "2 files" }) { app.webViews.firstMatch.links["Report"].tap() }
+            // The button holds the file it is waiting to show, else the count.
+            let secondIn = { ["2 files", "Downloaded report 2.pdf"].contains(self.sidebarDownloads.value as? String ?? "") }
+            if !wait(5, secondIn) { app.webViews.firstMatch.links["Report"].tap() }
             // Its list stays shut until the file is in: a page covered by a
             // popover sends no file (WebPool.canInteract).
-            XCTAssertTrue(wait { (self.sidebarDownloads.value as? String)?.hasSuffix("files") == true }, "the second file came without a question")
+            XCTAssertTrue(wait(15, secondIn), "the second file came without a question")
             sidebarDownloads.tap()
             XCTAssertTrue(any("downloads.row.report 2.pdf").waitForExistence(timeout: 8))
         } else {

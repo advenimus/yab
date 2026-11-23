@@ -89,6 +89,9 @@ final class WebPool: NSObject {
     /// its load commits: only a GET's page can be asked again for Download.
     var requestMethods: [Tab.ID: String] = [:]
     var downloadConversions: [Tab.ID: DownloadConversion] = [:]
+    /// Where a link was last held, in the window, and when (uptime): Download
+    /// Linked File flies from there.
+    var heldLink: (tab: Tab.ID, at: CGPoint, time: TimeInterval)?
     /// Tabs whose main frame was just sent on to an app's link and refused.
     private var appLinks: Set<Tab.ID> = []
     /// When the person last touched each tab's page (uptime), as Yab's own
@@ -2255,6 +2258,7 @@ extension WebPool: WKUIDelegate {
                  completionHandler: @escaping @MainActor (UIContextMenuConfiguration?) -> Void) {
         guard let url = elementInfo.linkURL, opensAsTab(url), let id = tabsByView[ObjectIdentifier(webView)],
               canInteract(id, in: webView) else { completionHandler(nil); return }
+        noteHeldLink(id, in: webView)
         Task { @MainActor [weak self, weak webView] in
             guard let self, let webView, self.live[id] === webView else { completionHandler(nil); return }
             let held = await PageImage.held(in: webView)
