@@ -39,6 +39,7 @@ struct TabletDownloadsButton: View {
         .onChange(of: question?.id, initial: true) { _, id in if id != nil { open = true } }
         .onChange(of: active) { _, shown in open = shown && question != nil }
         .onChange(of: open) { _, shown in if shown { app.downloads.seen() } }
+        .onChange(of: app.workspace.downloadsShown) { _, _ in if active { open = true } }
     }
 }
 

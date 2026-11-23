@@ -190,7 +190,7 @@ extension AppModel {
             closeFieldAfterChoice()
             // Once the field is gone: the keys stay the field's while it is up.
             DispatchQueue.main.asyncAfter(deadline: .now() + (Motion.disabled ? 0 : Motion.fieldClose.duration)) { [weak self] in
-                self?.run(command)
+                self?.run(command, privately: isPrivate)
             }
         case .findOnPage:
             let id = browser.tab?.id
