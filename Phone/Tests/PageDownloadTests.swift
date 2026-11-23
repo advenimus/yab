@@ -385,11 +385,12 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertEqual(pages.navigationState(for: source.id)?.entries.map(\.url), before.entries.map(\.url))
     }
 
-    /// A picture, a sound or a text file shown as the page is kept as it
+    /// A picture, a sound, a video or a text file shown as the page is kept as it
     /// came: the same address again, through the tab's own cookies, and its
     /// history stays as it was.
     func testDownloadKeepsAPictureSoundOrTextPageWithTheTabsCookie() async throws {
-        for (path, body, cookie) in [("/pic.png", DownloadSite.png, "pic"), ("/clip.mp3", DownloadSite.mp3, "clip"), ("/note.txt", DownloadSite.note, "note")] {
+        for (path, body, cookie) in [("/pic.png", DownloadSite.png, "pic"), ("/clip.mp3", DownloadSite.mp3, "clip"), ("/clip.mp4", DownloadSite.mp4, "film"),
+                                    ("/note.txt", DownloadSite.note, "note")] {
             let source = tab("download.document\(cookie)"), view = try await ready(source)
             XCTAssertFalse(pages.state(for: source.id).downloadable, "an HTML page has no Download")
             let _: Any = try await view.evaluateJavaScript("document.cookie='\(cookie)=owned;path=/'; true")
@@ -426,6 +427,77 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertEqual(site.requests.count, asked)
         XCTAssertTrue(pages.transfers.isEmpty && store.entries.isEmpty)
         try await settles(view, at: site.url("/page"))
+    }
+
+    /// The app over the pool, as it runs: a public page and another in a
+    /// public space, a private one in Private. The viewer's open is seen.
+    private func documentApp() -> (AppModel, viewed: () -> [Tab.ID]) {
+        let page = { (id: String, isPrivate: Bool) in
+            YabPhone.Tab(id: id, title: id, site: "127.0.0.1", icon: "globe", url: self.site.url("/page").absoluteString, isPrivate: isPrivate)
+        }
+        let world = World(name: "download.viewer.\(UUID().uuidString)", space: "public", spaces: [
+            Space(id: "public", name: "Public", emoji: "", tint: RGB(238, 233, 226),
+                  today: [page("viewer.page", false), page("viewer.other", false)], current: "viewer.other"),
+            Space(id: "private", name: "Private", emoji: "", tint: RGB(31, 31, 34),
+                  today: [page("viewer.secret", true)], current: "viewer.secret", isPrivate: true)
+        ], mac: World.Mac(joined: false))
+        // Its files in a folder of the test's own, not the app's Downloads.
+        let app = AppModel(world: world, fixturesEnabled: false, privateLockEnabled: { false }, downloads: .temporary())
+        pages = app.pages
+        ids += ["viewer.page", "viewer.other", "viewer.secret"]
+        var viewed: [Tab.ID] = []
+        let shows = app.pages.onViewDownload
+        app.pages.onViewDownload = { tab, entry in viewed.append(tab); shows?(tab, entry) }
+        return (app, { viewed })
+    }
+
+    /// The tab in front, of the page's privacy: its PDF opens, the same
+    /// way the two below must not.
+    func testThePageInFrontsPDFOpens() async throws {
+        let (app, viewed) = documentApp()
+        let source = try XCTUnwrap(app.browser.tab)
+        let view = try await ready(source)
+        try await click(view, "pdf")
+        try await require { app.downloads.entries.first?.isDone == true }
+        try await require { viewed() == [source.id] }
+        try await require({ app.downloads.arrival?.seen == true }, "the viewer opened the file")
+    }
+
+    /// A private tab's PDF, whole while an ordinary page is in front, only
+    /// lands in Downloads: the viewer never opens over the public page.
+    func testAPrivateTabsPDFBehindAPublicPageLandsWithoutOpening() async throws {
+        let (app, viewed) = documentApp()
+        XCTAssertEqual(app.browser.tab?.id, "viewer.other")
+        let secret = try XCTUnwrap(app.browser.tab("viewer.secret"))
+        let view = try await ready(secret)
+        try await click(view, "pdf")
+        let file = try await completed()
+        XCTAssertTrue(file.isPrivate)
+        try await require { viewed() == [secret.id] }
+        XCTAssertEqual(app.browser.tab?.id, "viewer.other")
+        XCTAssertNil(window.rootViewController?.presentedViewController, "no viewer over the public page")
+        XCTAssertEqual(app.downloads.arrival?.seen, false, "the file waits in Downloads, not opened")
+    }
+
+    /// A PDF whose tab was closed before it was whole only lands in
+    /// Downloads: the viewer doesn't open over the page in front now.
+    func testAClosedSourceTabsPDFLandsWithoutOpening() async throws {
+        let (app, viewed) = documentApp()
+        let source = try XCTUnwrap(app.browser.tab)
+        let view = try await ready(source)
+        site.holdFiles()
+        try await click(view, "pdf")
+        _ = try await started()
+        app.browser.close(source.id)
+        XCTAssertNil(app.browser.tab(source.id))
+        XCTAssertNotNil(app.browser.tab)
+        site.releaseFiles()
+        let file = try await completed()
+        XCTAssertEqual(file.name, "doc.pdf")
+        XCTAssertEqual(try bytes(file), DownloadSite.pdf)
+        try await require { viewed() == [source.id] }
+        XCTAssertNil(window.rootViewController?.presentedViewController, "no viewer over the page in front")
+        XCTAssertEqual(app.downloads.arrival?.seen, false, "the file waits in Downloads, not opened")
     }
 
     /// A PDF the page opens inline is a file for the system's viewer: kept
@@ -607,7 +679,11 @@ private final class DownloadSite: @unchecked Sendable {
     static let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")!
     static let mp3 = Data([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFB, 0x90, 0x00])
     static let note = Data("An owned note, kept as it came.\n".utf8)
-    static let documents = ["/pic.png": ("image/png", png), "/clip.mp3": ("audio/mpeg", mp3), "/note.txt": ("text/plain; charset=utf-8", note)]
+    /// An MP4's first box alone: WebKit's player takes the page, with nothing to play.
+    static let mp4 = Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6F, 0x6D,
+                           0x00, 0x00, 0x02, 0x00, 0x69, 0x73, 0x6F, 0x6D, 0x6D, 0x70, 0x34, 0x31])
+    static let documents = ["/pic.png": ("image/png", png), "/clip.mp3": ("audio/mpeg", mp3), "/clip.mp4": ("video/mp4", mp4),
+                            "/note.txt": ("text/plain; charset=utf-8", note)]
     private let listener: NWListener
     private let queue = DispatchQueue(label: "owned.download.site")
     private var connections: [ObjectIdentifier:NWConnection] = [:]
@@ -671,7 +747,10 @@ private final class DownloadSite: @unchecked Sendable {
             if target == "/doc.pdf" {
                 let body = Self.pdf
                 let headers = Data("HTTP/1.1 200 OK\r\nContent-Type: application/pdf\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
-                self.send(headers + body, connection)
+                if self.holds {
+                    connection.send(content: headers + body.prefix(2), completion: .contentProcessed { _ in })
+                    self.held.append((connection, Data(body.dropFirst(2))))
+                } else { self.send(headers + body, connection) }
                 return
             }
             if target == "/file" {
