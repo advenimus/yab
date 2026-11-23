@@ -105,6 +105,18 @@ final class DownloadStoreTests: XCTestCase {
         XCTAssertEqual(first.entries.map(\.name), ["open.pdf"])
     }
 
+    /// Documents open as files; pages, pictures and text stay pages.
+    func testWhichTypesOpenInTheViewer() {
+        for type in ["application/pdf", "Application/PDF; charset=binary", "text/pdf",
+                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.apple.keynote"] {
+            XCTAssertTrue(PageDocument.opensInViewer(type), type)
+        }
+        for type in ["text/html", "image/png", "video/mp4", "text/plain", "application/json", ""] {
+            XCTAssertFalse(PageDocument.opensInViewer(type), type)
+        }
+        XCTAssertFalse(PageDocument.opensInViewer(nil))
+    }
+
     func testALaunchClearsWhatAKilledPrivateSessionLeft() throws {
         try FileManager.default.createDirectory(at: privateFolder, withIntermediateDirectories: true)
         try Data("x".utf8).write(to: privateFolder.appendingPathComponent("left.pdf"))
