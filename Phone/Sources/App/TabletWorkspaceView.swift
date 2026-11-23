@@ -42,11 +42,7 @@ struct TabletWorkspaceView: View {
     @Environment(AppModel.self) private var app
     let size: CGSize
     private var preferences: TabletLayoutPreferences { app.workspace.preferences }
-    private var geometry: TabletWorkspaceGeometry {
-        TabletWorkspaceGeometry(size: size, statusBar: SettingsLayer.statusBar,
-                                sidebar: preferences.sidebarShown, framed: preferences.framed,
-                                sidebarExtent: preferences.sidebarWidth, paired: app.workspace.paired)
-    }
+    private var geometry: TabletWorkspaceGeometry { app.tabletGeometry(in: size) }
     private var covered: Bool {
         FirstLaunch.shows(app) || app.surfaces.settings || app.surfaces.join || app.surfaces.chat != nil
             || app.surfaces.field != nil || AboutModel.shared.shown
@@ -658,6 +654,15 @@ extension SiteSettings.Permission {
 }
 
 extension AppModel {
+    /// The iPad workspace in a window this size: what TabletWorkspaceView
+    /// lays out, and what the field's commands read to know what is on screen.
+    func tabletGeometry(in size: CGSize) -> TabletWorkspaceGeometry {
+        let preferences = workspace.preferences
+        return TabletWorkspaceGeometry(size: size, statusBar: SettingsLayer.statusBar, sidebar: preferences.sidebarShown,
+                                       framed: preferences.framed, sidebarExtent: preferences.sidebarWidth,
+                                       paired: workspace.paired)
+    }
+
     /// The Mac's rule: the toolbar's downloads button only from the first
     /// file, and only while the sidebar's foot, which always has one, is away.
     func showsToolbarDownloads(sidebarShown: Bool) -> Bool {

@@ -93,10 +93,12 @@ extension AppModel {
 
     /// A downloads list to open: on iPad a downloads button on screen (the
     /// sidebar's foot, or the toolbar's while it has something to show); on
-    /// iPhone the plate's Downloads page, which needs a page.
+    /// iPhone the plate's Downloads page, which needs a page. The sidebar is
+    /// the one the window lays out: a narrow one hides it while its switch
+    /// stays on.
     var downloadsInReach: Bool {
         guard workspace.tabletControls else { return browser.tab != nil }
-        return workspace.sidebarShown || showsToolbarDownloads(sidebarShown: false)
+        return tabletGeometry(in: workspace.windowSize).sidebarWidth > 0 || showsToolbarDownloads(sidebarShown: false)
     }
 
     /// A private field runs nothing that leaves Private or shows what it
