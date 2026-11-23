@@ -98,6 +98,15 @@ final class BrowserKeysTests: XCTestCase {
         XCTAssertFalse(try press(.toggleSidebar), "compact phone and Duo retain their keys")
     }
 
+    func testCommandCommaOpensSettingsAsOnTheMac() throws {
+        XCTAssertEqual(BrowserKey.settings.input, ",")
+        XCTAssertEqual(BrowserKey.settings.modifiers, .command)
+        XCTAssertTrue(try press(.settings))
+        XCTAssertTrue(app.surfaces.settings)
+        XCTAssertTrue(try press(.settings), "still ours with Settings up, never the system's Settings app")
+        XCTAssertTrue(app.surfaces.settings, "and Settings stays as it is")
+    }
+
     func testCommandLOpensTheAddress() throws {
         XCTAssertTrue(try press(.openLocation))
         XCTAssertEqual(app.surfaces.field, .address)
@@ -180,7 +189,11 @@ final class BrowserKeysTests: XCTestCase {
         ]
         for show in cover {
             show()
-            for key in BrowserKey.all { XCTAssertFalse(try press(key), key.title) }
+            // ⌘, alone is still taken, so the system's Settings item never gets it, and does nothing.
+            for key in BrowserKey.all where key != .settings { XCTAssertFalse(try press(key), key.title) }
+            let settingsWereUp = app.surfaces.settings
+            XCTAssertTrue(try press(.settings))
+            XCTAssertEqual(app.surfaces.settings, settingsWereUp)
             XCTAssertNil(app.surfaces.field)
             XCTAssertEqual(app.browser.tab?.id, "second")
             XCTAssertEqual(ids.count, 3)
