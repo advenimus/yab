@@ -38,6 +38,7 @@ struct TabletDownloadsButton: View {
         // A site's first file asks at once, from wherever the button is.
         .onChange(of: question?.id, initial: true) { _, id in if id != nil { open = true } }
         .onChange(of: active) { _, shown in open = shown && question != nil }
+        .onChange(of: open) { _, shown in if shown { app.downloads.seen() } }
     }
 }
 

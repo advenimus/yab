@@ -321,7 +321,7 @@ final class PageDownloadTests: XCTestCase {
         site.failFiles()
         try await click(view)
         let broken = try await failed()
-        XCTAssertEqual(store.flash, broken.id, "the line says Failed for a moment")
+        XCTAssertEqual(store.arrival?.id, broken.id, "the line says Failed for a moment")
         XCTAssertEqual(store.nowItem(isPrivate: false)?.subtitle, "Failed")
         try await settles(view, at: site.url("/page"))
         XCTAssertNil(broken.file)
@@ -494,10 +494,11 @@ final class PageDownloadTests: XCTestCase {
         let (job, view) = try await away("download.away.finish")
         site.releaseFiles()
         try await require { job.phase == .ready }
-        XCTAssertNil(store.flash, "nothing is said while Yab is away")
+        XCTAssertNil(store.nowItem(isPrivate: false), "nothing is said while Yab is away")
         XCTAssertEqual(try bytes(try XCTUnwrap(store.entry(job.id))), DownloadSite.bytes)
         pages.appDidBecomeActive()
-        try await require { self.store.flash == job.id }
+        try await require { self.store.nowItem(isPrivate: false)?.subtitle == "Open" }
+        XCTAssertEqual(store.arrival?.id, job.id)
         XCTAssertEqual(store.nowItem(isPrivate: false)?.subtitle, "Open")
         try await settles(view, at: site.url("/page"))
     }
@@ -521,9 +522,9 @@ final class PageDownloadTests: XCTestCase {
         try await require { job.phase == .ready }
         pages.appDidBecomeActive()
         try await Task.sleep(for: .milliseconds(300))
-        XCTAssertNil(store.flash, "still locked: nothing private shows")
+        XCTAssertNil(store.nowItem(isPrivate: true), "still locked: nothing private shows")
         pages.setPageInteractionsEnabled(true)
-        try await require { self.store.flash == job.id }
+        try await require { self.store.nowItem(isPrivate: true)?.subtitle == "Open" }
     }
 }
 

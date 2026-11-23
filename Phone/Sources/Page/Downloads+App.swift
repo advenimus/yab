@@ -21,7 +21,6 @@ extension AppModel {
         pages.onViewDownload = { [weak self] tab, entry in
             guard let self, let file = downloads.entry(entry),
                   browser.tab?.id == tab || browser.tab(tab) == nil else { return }
-            downloads.flashTaken()
             openDownload(file)
         }
         pages.onImageSaved = { [weak self] outcome in
@@ -81,9 +80,9 @@ extension AppModel {
     /// The Now line: Open opens the file; otherwise the sheet comes out of
     /// the plate with Downloads already on it.
     func tapDownloadLine() {
-        if let flash = downloads.flash, let file = downloads.entry(flash), file.isDone,
+        if let arrival = downloads.arrival, arrival.done, !arrival.said, !arrival.seen,
+           let file = downloads.entry(arrival.id),
            downloads.list(isPrivate: pageIsPrivate).allSatisfy({ !$0.isRunning }) {
-            downloads.flashTaken()
             openDownload(file)
             return
         }
@@ -105,6 +104,7 @@ extension AppModel {
 
     func openDownload(_ file: DownloadEntry) {
         guard let url = downloads.url(of: file) else { return }
+        downloads.seen(file.id)
         FilePreview.show(url)
     }
 
