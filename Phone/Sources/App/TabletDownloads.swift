@@ -58,6 +58,7 @@ struct TabletDownloadsButton: View {
         .onChange(of: open) { _, shown in
             if shown { app.downloads.listOpened(isPrivate: app.pageIsPrivate) } else { askOpened = false }
         }
+        .onChange(of: app.workspace.downloadsShown) { _, _ in if active { open = true } }
     }
 
     /// Opens the popover for the question: the question's, unless it was open already.

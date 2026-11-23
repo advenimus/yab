@@ -125,4 +125,64 @@ final class FieldCommandsTests: XCTestCase {
         XCTAssertEqual(app.browser.tab?.navigationURL?.absoluteString, "https://example.com/on-mac")
         XCTAssertNotEqual(app.browser.tab?.id, synced.id, "a local copy, not the Mac's tab")
     }
+
+    /// Every command a private field offers over a private page still runs
+    /// once the field has gone: the offer and the run agree.
+    func testEveryCommandPrivateOffersRunsOnceTheFieldIsGone() {
+        widen()
+        app.workspace.tabletControls = true
+        openPage(privately: true)
+        app.pageStateOverride = WebPool.PageState(downloadable: true)
+        let offered = app.commandCandidates.compactMap { FieldCommand(token: $0.token) }
+        XCTAssertEqual(Set(offered.map(\.title)), ["New Private Tab", "Show or Hide Sidebar",
+                                                  "Close Tab", "Reload Page", "Zoom In", "Zoom Out", "Actual Size",
+                                                  "Copy Link", "Print…", "Save as PDF", "Duplicate Tab", "Download",
+                                                  "Show Downloads"])
+        app.field.close()
+        for command in offered {
+            XCTAssertTrue(app.mayRun(command, privately: true), "\(command.title) is offered in Private, so it runs")
+        }
+    }
+
+    /// A command chosen in a private field runs only if, once the field has
+    /// gone, Private may still run it: the page in front is no longer the
+    /// private one, so the ordinary page is left alone.
+    func testAPrivateChoiceRechecksItsPageWhenItRuns() async throws {
+        let ordinary = try XCTUnwrap(app.browser.tab)
+        openPage(privately: true)
+        let row = try XCTUnwrap(commands("duplicate tab").first)
+        let before = app.browser.allTabs.count
+        app.choose(row)
+        app.browser.select(ordinary.id)
+        XCTAssertFalse(app.browser.tab?.isPrivate ?? true)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(app.browser.allTabs.count, before, "the ordinary page is not the private field's to copy")
+    }
+
+    /// Show Downloads is a command wherever a downloads list is in reach:
+    /// the iPhone's plate page, the iPad's downloads button.
+    func testShowDownloadsOpensThePlatesDownloadsOnIPhone() async throws {
+        openPage()
+        let row = try XCTUnwrap(commands("show downloads").first)
+        XCTAssertEqual(app.fieldRows.first?.title, "Show Downloads", "typed whole, it leads the rows")
+        app.choose(row)
+        try await until { app.surfaces.menu == .plate && app.pageMenu.page == .downloads }
+    }
+
+    func testShowDownloadsOpensTheIPadsButtonWhereOneIsShown() async throws {
+        widen()
+        app.workspace.tabletControls = true
+        app.workspace.preferences.sidebarShown = true
+        openPage()
+        let row = try XCTUnwrap(commands("show downloads").first)
+        let asked = app.workspace.downloadsShown
+        app.choose(row)
+        try await until { app.workspace.downloadsShown == asked + 1 }
+        XCTAssertNil(app.surfaces.menu, "the iPad's list is its button's, not the phone's plate")
+
+        app.field.close()
+        app.workspace.preferences.sidebarShown = false
+        app.surfaces.openField(.address)
+        XCTAssertTrue(commands("show downloads").isEmpty, "no button in the toolbar with nothing downloaded")
+    }
 }
