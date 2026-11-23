@@ -89,6 +89,8 @@ final class WebPool: NSObject {
         let origin: DownloadOrigin
         let document: UUID?
         let navigation: WKNavigation?
+        /// A document the tab was opening, for the system's viewer (PageDocument).
+        var opens = false
     }
     private var downloadConversions: [Tab.ID: DownloadConversion] = [:]
     /// Tabs whose main frame was just sent on to an app's link and refused.
@@ -104,6 +106,8 @@ final class WebPool: NSObject {
     let downloads: DownloadStore
     /// A site wants to send a file: nil lets it (tests of the transfer itself).
     var onDownloadAsk: (@MainActor (DownloadAsk, @escaping @MainActor (Bool) -> Void) -> Void)?
+    /// A document a tab opened is whole (PageDocument): the system's viewer shows it.
+    var onViewDownload: (@MainActor (Tab.ID, UUID) -> Void)?
     private var pageInteractionsEnabled = true
     /// Yab is in the background (or inactive on its way there).
     private var appAway = false
@@ -2161,14 +2165,20 @@ extension WebPool: WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
         let attachment = (response.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition")?
             .trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("attachment") == true
-        guard attachment || !response.canShowMIMEType else { return .allow }
+        // A PDF or another document opens as a file, in the system's viewer,
+        // which saves and shares it; WebKit's own view of it has neither.
+        let opens = !attachment && response.isForMainFrame && PageDocument.opensInViewer(response.response.mimeType)
+        guard attachment || opens || !response.canShowMIMEType else { return .allow }
         guard !fixturesEnabled, response.isForMainFrame, let id = tabsByView[ObjectIdentifier(webView)],
               canInteract(id, in: webView), downloadOrigins[id] != nil else {
+            // A tab out of sight never opens the viewer over another: it shows
+            // the document as WebKit does.
+            if opens { return .allow }
             if response.isForMainFrame, let id = tabsByView[ObjectIdentifier(webView)] { restoreDownloadSource(id, in: webView) }
             return .cancel
         }
         if let origin = downloadOrigins[id] {
-            downloadConversions[id] = DownloadConversion(origin: origin, document: documents[id], navigation: activeNavigations[id])
+            downloadConversions[id] = DownloadConversion(origin: origin, document: documents[id], navigation: activeNavigations[id], opens: opens)
         }
         return .download
     }
@@ -2206,30 +2216,52 @@ extension WebPool: WKNavigationDelegate {
               download.originalRequest?.url == conversion.origin.requestURL,
               download.originatingFrame.request.url == conversion.origin.frameURL,
               download.originatingFrame.isMainFrame, download.webView === view,
-              let origin = restoreDownloadSource(id, in: view) else { download.cancel(nil); return }
+              case let fresh = committedURLs[id] == nil,
+              let origin = fresh ? releaseFreshSource(id, in: view) : restoreDownloadSource(id, in: view) else { download.cancel(nil); return }
         downloadConversions[id] = nil
-        presentDownload(download, tab: id, in: view, origin: origin)
+        presentDownload(download, tab: id, in: view, origin: origin, opens: conversion.opens)
+        // A page's new window that was only ever this file has nothing to
+        // show: it goes, as window.close() would, back to its opener.
+        if fresh, let opener = popupOpeners.removeValue(forKey: id) {
+            onCloseWindowFrom?(id, opener)
+            forget(id)
+        }
     }
 
-    private func presentDownload(_ download: WKDownload, tab id: Tab.ID, in view: WKWebView, origin: DownloadOrigin) {
+    /// A tab that had shown nothing yet when its first load became a file:
+    /// no page to put back, only the load to end.
+    private func releaseFreshSource(_ id: Tab.ID, in view: WKWebView) -> DownloadOrigin? {
+        guard live[id] === view, committedURLs[id] == nil, let origin = downloadOrigins[id],
+              origin.store == ObjectIdentifier(view.configuration.websiteDataStore),
+              origin.privateSession == (privateTabs.contains(id) ? privateSession : nil) else { return nil }
+        downloadOrigins[id] = nil
+        if let active = activeNavigations.removeValue(forKey: id) { retiredNavigations.add(active) }
+        requestedURLs[id] = nil; actionTypes[id] = nil; pendingIndex[id] = nil
+        endRefresh(id, in: view)
+        publishState(id)
+        return origin
+    }
+
+    private func presentDownload(_ download: WKDownload, tab id: Tab.ID, in view: WKWebView, origin: DownloadOrigin, opens: Bool) {
         guard canInteract(id, in: view) else { download.cancel(nil); return }
-        adopt(download, tab: id, page: origin.url)
+        adopt(download, tab: id, page: committedURLs[id] == nil ? nil : origin.url, opens: opens)
     }
 
     /// The WKDownload is ours from here. Its source goes by the page it came
     /// from, as the page said it then: its tab may be long gone by Retry.
-    private func adopt(_ download: WKDownload, tab id: Tab.ID, page: URL?, entry: UUID? = nil) {
+    private func adopt(_ download: WKDownload, tab id: Tab.ID, page: URL?, entry: UUID? = nil, opens: Bool = false) {
         let site = siteOf?(id, page)
-        let source = PageDownload.Source(tab: id, host: site?.host ?? page?.host() ?? "",
+        let source = PageDownload.Source(tab: id, host: site?.host ?? page?.host() ?? download.originalRequest?.url?.host() ?? "",
                                          isPrivate: site?.isPrivate ?? privateTabs.contains(id))
-        let job = PageDownload(download: download, source: source, store: downloads, entry: entry,
+        let job = PageDownload(download: download, source: source, store: downloads, entry: entry, opens: opens,
             ask: { [weak self] question, answer in
                 guard let ask = self?.onDownloadAsk else { answer(true); return }
                 ask(question, answer)
             },
             retry: { [weak self] entry, store, request in
                 self?.retryDownload(entry, store, request, page: page, tab: id) ?? false
-            }, ended: { [weak self] token in self?.transfers[token] = nil })
+            }, ended: { [weak self] token in self?.transfers[token] = nil },
+            viewed: { [weak self] entry in self?.onViewDownload?(id, entry) })
         transfers[job.id] = job
         if appAway { job.leave() }
     }
