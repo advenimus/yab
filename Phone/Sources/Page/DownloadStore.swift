@@ -54,8 +54,23 @@ final class DownloadStore {
     private(set) var entries: [DownloadEntry] = []
     /// Sites waiting for an answer, oldest first: the card shows the first.
     private(set) var asks: [DownloadAsk] = []
-    /// The one the Now line says Open or Failed about, for a moment.
-    private(set) var flash: UUID?
+    /// The last file in. The phone's Now line says it for `flashTime`; the
+    /// iPad's button keeps a done file's icon until it is seen.
+    private(set) var arrival: Arrival?
+
+    /// One fact for every screen: each decides how long it shows it.
+    struct Arrival: Equatable {
+        let id: UUID
+        /// false: it failed.
+        let done: Bool
+        /// The list opened, or the file did.
+        var seen = false
+        /// When the person could first hear of it: as it ended, or on Yab's
+        /// return when it ended while away. nil while away.
+        var at: Date?
+        /// The Now line's moment is over.
+        var said = false
+    }
 
     struct Control {
         var stop: (@MainActor () -> Void)?
@@ -67,10 +82,9 @@ final class DownloadStore {
     private let index: URL?
     @ObservationIgnored private var controls: [UUID: Control] = [:]
     @ObservationIgnored private var answers: [UUID: @MainActor (Bool) -> Void] = [:]
-    @ObservationIgnored private var flashTask: Task<Void, Never>?
+    @ObservationIgnored private var lineTask: Task<Void, Never>?
     /// Yab is away: what ended is said on return, not to nobody.
     @ObservationIgnored private var away = false
-    @ObservationIgnored private var heldFlash: UUID?
 
     /// `index` nil: nothing outlives the app (test worlds).
     init(folder: URL, privateFolder: URL, index: URL?) {
@@ -160,7 +174,7 @@ final class DownloadStore {
         let entry = DownloadEntry(id: id, name: name, host: SiteSettings.key(host) ?? host, size: total ?? 0, date: Date(),
                                   state: .running(received: 0, total: total), isPrivate: isPrivate)
         if let at = entries.firstIndex(where: { $0.id == id }) { entries[at] = entry } else { entries.insert(entry, at: 0) }
-        if flash == id { clearFlash() }
+        if arrival?.id == id { clearArrival() }
     }
 
     /// Progress, in the steps the words can show: a percent (or a quarter
@@ -196,11 +210,11 @@ final class DownloadStore {
             entries[at] = entry
             controls[id] = nil
             save()
-            say(id)
+            arrive(id, done: true)
             return true
         } catch {
             entries[at].state = .failed
-            say(id)
+            arrive(id, done: false)
             return false
         }
     }
@@ -209,7 +223,7 @@ final class DownloadStore {
         guard let at = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[at].state = .failed
         controls[id] = Control(stop: nil, retry: retry)
-        say(id)
+        arrive(id, done: false)
     }
 
     func stop(_ id: UUID) {
@@ -226,7 +240,7 @@ final class DownloadStore {
     func drop(_ id: UUID) {
         controls[id] = nil
         entries.removeAll { $0.id == id }
-        if flash == id { clearFlash() }
+        if arrival?.id == id { clearArrival() }
         withdraw(id)
     }
 
@@ -246,38 +260,51 @@ final class DownloadStore {
             controls[entry.id] = nil
         }
         asks.filter(\.isPrivate).forEach { answer($0.id, false) }
+        let gone = Set(entries.filter(\.isPrivate).map(\.id))
         entries.removeAll(where: \.isPrivate)
+        if let arrival, gone.contains(arrival.id) { clearArrival() }
         try? FileManager.default.removeItem(at: privateFolder)
     }
 
     // MARK: - the moment after
 
-    private func say(_ id: UUID) {
-        guard !away else { heldFlash = id; return }
-        flashTask?.cancel()
-        Motion.nowGone.run { flash = id }
-        flashTask = Task { @MainActor [weak self] in
+    private func arrive(_ id: UUID, done: Bool) {
+        Motion.nowGone.run { arrival = Arrival(id: id, done: done, at: away ? nil : Date()) }
+        if !away { sayOnLine(id) }
+    }
+
+    /// The Now line's two seconds, from when it could be heard.
+    private func sayOnLine(_ id: UUID) {
+        lineTask?.cancel()
+        lineTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.flashTime)
-            guard !Task.isCancelled, let self, self.flash == id else { return }
-            Motion.nowGone.run { self.clearFlash() }
+            guard !Task.isCancelled, let self, self.arrival?.id == id else { return }
+            Motion.nowGone.run { self.arrival?.said = true }
         }
     }
 
-    private func clearFlash() {
-        flashTask?.cancel()
-        flashTask = nil
-        flash = nil
+    private func clearArrival() {
+        lineTask?.cancel()
+        lineTask = nil
+        arrival = nil
     }
 
-    /// Open pressed: it has said what it had to.
-    func flashTaken() { clearFlash() }
+    /// The list opened, or the file did: the button is itself again and the
+    /// line has nothing left to say.
+    func seen(_ id: UUID? = nil) {
+        guard let arrival, !arrival.seen, id == nil || id == arrival.id else { return }
+        lineTask?.cancel()
+        Motion.nowGone.run { self.arrival?.seen = true }
+    }
 
     func leave() { away = true }
 
     func comeBack() {
         away = false
         refresh()
-        if let held = heldFlash, entry(held) != nil { heldFlash = nil; say(held) }
+        guard let arrival, arrival.at == nil, entry(arrival.id) != nil else { return }
+        Motion.nowGone.run { self.arrival?.at = Date() }
+        sayOnLine(arrival.id)
     }
 
     // MARK: - disk
@@ -307,7 +334,7 @@ final class DownloadStore {
     // MARK: - test worlds
 
     /// A list as a named state wants it, its files real and small.
-    func pretend(_ list: [DownloadEntry], flash: UUID? = nil, stoppable: Bool = true) {
+    func pretend(_ list: [DownloadEntry], arrived: UUID? = nil, stoppable: Bool = true) {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: privateFolder, withIntermediateDirectories: true)
         entries = list
@@ -317,7 +344,7 @@ final class DownloadStore {
             if entry.isRunning, stoppable { controls[entry.id] = Control(stop: {}, retry: nil) }
             if entry.state == .failed { controls[entry.id] = Control(stop: nil, retry: {}) }
         }
-        self.flash = flash
+        arrival = arrived.flatMap(entry).map { Arrival(id: $0.id, done: $0.isDone, at: Date()) }
     }
 
     func pretend(ask: DownloadAsk) { asks = [ask] }
@@ -336,8 +363,9 @@ extension DownloadStore {
             let mark: MacGlyph = running.count == 1 ? DownloadMark.of(running[0].name) : .yabDownload
             return NowItem(id: Self.nowID, kind: .download, title: going.title, subtitle: going.word, short: short, icon: .mac(mark))
         }
-        guard let flash, let entry = entry(flash), entry.isPrivate == isPrivate else { return nil }
-        if entry.isDone {
+        guard let arrival, arrival.at != nil, !arrival.said, !arrival.seen,
+              let entry = entry(arrival.id), entry.isPrivate == isPrivate else { return nil }
+        if arrival.done {
             return NowItem(id: Self.nowID, kind: .download, title: entry.name, subtitle: "Open", short: "Open", icon: .mac(DownloadMark.of(entry.name)))
         }
         return NowItem(id: Self.nowID, kind: .download, title: entry.name, subtitle: "Failed", short: "Failed", icon: .mac(.yabDownload))
