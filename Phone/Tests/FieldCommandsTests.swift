@@ -215,6 +215,23 @@ final class FieldCommandsTests: XCTestCase {
         try await until { app.workspace.downloadsShown == asked + 1 }
         XCTAssertNil(app.surfaces.menu, "the iPad's list is its button's, not the phone's plate")
 
+        // A window too narrow for the sidebar beside a split: no sidebar on
+        // screen, so no button in its foot, whatever the switch says.
+        app.field.close()
+        app.workspace.windowSize = CGSize(width: 900, height: 700)
+        let other = PageFixtures.liveTab(for: URL(string: "https://example.com/b")!)
+        app.browser.open(other, deduplicate: false)
+        let front = try XCTUnwrap(app.browser.tab?.id)
+        let beside = try XCTUnwrap(app.browser.space.today.first { $0.id != front }?.id)
+        app.workspace.openBeside(current: beside, other: front)
+        XCTAssertTrue(app.workspace.paired)
+        app.surfaces.openField(.address)
+        XCTAssertTrue(commands("show downloads").isEmpty, "the sidebar gave way to the split")
+        app.field.close()
+        app.workspace.fullSpread()
+        app.surfaces.openField(.address)
+        XCTAssertFalse(commands("show downloads").isEmpty, "one page leaves room for the sidebar")
+
         app.field.close()
         app.workspace.preferences.sidebarShown = false
         app.surfaces.openField(.address)
