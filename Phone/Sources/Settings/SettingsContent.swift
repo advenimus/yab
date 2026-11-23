@@ -543,7 +543,9 @@ struct SettingsContent {
                 sections.append(SettingsSectionModel(id: "appearance.browser", title: "Browser", rows: [
                     SettingsRowModel(id: "appearance.sidebar", icon: nil, title: "Show Sidebar", value: nil,
                                      kind: .toggle(Binding(get: { layout.sidebarShown }, set: { layout.sidebarShown = $0 }))),
-                    SettingsRowModel(id: "appearance.addressBars", icon: nil, title: "Show Address Bars", value: nil,
+                    SettingsRowModel(id: "appearance.tabsInSidebar", icon: nil, title: "Show Tabs in Sidebar", value: nil,
+                                     kind: .toggle(Binding(get: { layout.tabsInSidebar }, set: { layout.tabsInSidebar = $0 }))),
+                    SettingsRowModel(id: "appearance.addressBars", icon: nil, title: "Show Address Bar", value: nil,
                                      kind: .toggle(Binding(get: { layout.addressBars }, set: { layout.addressBars = $0 }))),
                     SettingsRowModel(id: "appearance.pageFrame", icon: nil, title: "Frame Page with Sidebar", value: nil,
                                      kind: .toggle(Binding(get: { layout.framed }, set: { layout.framed = $0 }))),

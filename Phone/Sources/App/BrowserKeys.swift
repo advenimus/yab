@@ -11,8 +11,8 @@ enum BrowserKey: Hashable, Sendable {
     case newTab, newPrivateTab, openLocation, closeTab, reopenTab
     case reload, back, forward, find
     case nextTab, previousTab, toggleSidebar, settings
-    /// Safari's ⇧⌘\ for All Tabs.
-    case allTabs
+    /// The Mac's ⇧⌘S: tabs in the sidebar or across the top; Safari's ⇧⌘\ for All Tabs.
+    case toggleTabsInSidebar, allTabs
     /// The Mac's View and File keys for the page.
     case zoomIn, zoomOut, actualSize, stop, reader, copyLink, print
     /// ⌘1 to ⌘8 the tab at that place, ⌘9 the last one.
@@ -20,7 +20,7 @@ enum BrowserKey: Hashable, Sendable {
 
     static let all: [BrowserKey] = [.newTab, .newPrivateTab, .openLocation, .closeTab, .reopenTab,
                                     .reload, .back, .forward, .find, .nextTab, .previousTab, .toggleSidebar, .settings,
-                                    .allTabs,
+                                    .toggleTabsInSidebar, .allTabs,
                                     .zoomIn, .zoomOut, .actualSize, .stop, .reader, .copyLink, .print]
         + (1...9).map { .tab($0) }
 
@@ -29,6 +29,7 @@ enum BrowserKey: Hashable, Sendable {
         case .newTab: "New Tab"
         case .newPrivateTab: "New Private Tab"
         case .settings: "Settings…"
+        case .toggleTabsInSidebar: "Show Tabs in Sidebar"
         case .allTabs: "Show All Tabs"
         case .zoomIn: "Zoom In"
         case .zoomOut: "Zoom Out"
@@ -58,6 +59,7 @@ enum BrowserKey: Hashable, Sendable {
         case .openLocation: "l"
         case .newPrivateTab: "n"
         case .settings: ","
+        case .toggleTabsInSidebar: "s"
         case .allTabs: "\\"
         // ⌘= is ⌘+ on the keyboard, as Safari's Zoom In.
         case .zoomIn: "="
@@ -80,7 +82,7 @@ enum BrowserKey: Hashable, Sendable {
 
     var modifiers: UIKeyModifierFlags {
         switch self {
-        case .reopenTab, .newPrivateTab, .allTabs, .reader, .copyLink: [.command, .shift]
+        case .reopenTab, .newPrivateTab, .toggleTabsInSidebar, .allTabs, .reader, .copyLink: [.command, .shift]
         case .nextTab: .control
         case .previousTab: [.control, .shift]
         default: .command
@@ -157,14 +159,14 @@ enum BrowserKey: Hashable, Sendable {
         }
         else { builder.insertSibling(UIMenu(title: "Edit", children: [find]), afterMenu: .file) }
 
-        let reload = inline(viewMenu, [.reload, .stop, .toggleSidebar, .allTabs])
+        let reload = inline(viewMenu, [.reload, .stop, .toggleSidebar, .toggleTabsInSidebar, .allTabs])
         if builder.menu(for: .view) != nil {
             builder.insertChild(reload, atStartOfMenu: .view)
             builder.insertChild(inline(pageMenu, [.reader, .zoomIn, .zoomOut, .actualSize]), atEndOfMenu: .view)
         }
 
         var history: [BrowserKey] = [.back, .forward]
-        if builder.menu(for: .view) == nil { history.insert(contentsOf: [.reload, .toggleSidebar, .allTabs], at: 0) }
+        if builder.menu(for: .view) == nil { history.insert(contentsOf: [.reload, .toggleSidebar, .toggleTabsInSidebar, .allTabs], at: 0) }
         let historyTop = UIMenu(title: "History", identifier: historyMenu, children: history.map(\.command))
         let after: UIMenu.Identifier = builder.menu(for: .view) != nil ? .view : .edit
         builder.insertSibling(historyTop, afterMenu: after)
@@ -195,7 +197,7 @@ extension AppModel {
         let tab = browser.tab
         switch key {
         case .newTab, .newPrivateTab, .settings: return true
-        case .toggleSidebar: return workspace.tabletControls
+        case .toggleSidebar, .toggleTabsInSidebar: return workspace.tabletControls
         case .allTabs, .zoomIn, .zoomOut, .actualSize, .copyLink: return tab != nil
         case .print: return pageCanBeDrawn
         case .stop: return tab != nil && currentPageState.isLoading
@@ -220,6 +222,7 @@ extension AppModel {
             guard !surfaces.settings, !surfaces.join, surfaces.chat == nil, !surfaces.coversChrome else { return }
             openSettingsFromSpaces(at: nil)
         case .toggleSidebar: workspace.sidebarShown.toggle()
+        case .toggleTabsInSidebar: workspace.preferences.tabsInSidebar.toggle()
         case .allTabs: TabStack.of(self).openGallery()
         case .zoomIn: pageMenuZoom(1)
         case .zoomOut: pageMenuZoom(-1)
@@ -281,6 +284,7 @@ extension BrowserKey {
         case .reader: ["reader", "reading mode"]
         case .copyLink: ["copy address", "copy url"]
         case .toggleSidebar: ["sidebar", "hide sidebar"]
+        case .toggleTabsInSidebar: ["tab bar", "vertical tabs"]
         case .allTabs: ["tabs", "tab overview"]
         default: []
         }

@@ -229,7 +229,7 @@ final class FieldCommandsTests: XCTestCase {
         openPage(privately: true)
         app.pageStateOverride = WebPool.PageState(downloadable: true)
         let offered = app.commandCandidates.compactMap { FieldCommand(token: $0.token) }
-        XCTAssertEqual(Set(offered.map(\.title)), ["New Private Tab", "Show or Hide Sidebar",
+        XCTAssertEqual(Set(offered.map(\.title)), ["New Private Tab", "Show or Hide Sidebar", "Show Tabs in Sidebar",
                                                   "Close Tab", "Reload Page", "Zoom In", "Zoom Out", "Actual Size",
                                                   "Copy Link", "Print…", "Save as PDF", "Duplicate Tab", "Download",
                                                   "Show Downloads"])
@@ -267,6 +267,7 @@ final class FieldCommandsTests: XCTestCase {
     func testShowDownloadsOpensTheIPadsButtonWhereOneIsShown() async throws {
         widen()
         app.workspace.tabletControls = true
+        app.workspace.preferences.tabsInSidebar = true
         app.workspace.preferences.sidebarShown = true
         // Nothing downloaded, whatever an earlier run left in the folder.
         app.downloads.pretend([])
@@ -297,6 +298,8 @@ final class FieldCommandsTests: XCTestCase {
         app.field.close()
         app.workspace.preferences.sidebarShown = false
         app.surfaces.openField(.address)
-        XCTAssertTrue(commands("show downloads").isEmpty, "no button in the toolbar with nothing downloaded")
+        XCTAssertTrue(commands("show downloads").isEmpty, "no button in the band with nothing downloaded")
+        app.workspace.preferences.tabsInSidebar = false
+        XCTAssertFalse(commands("show downloads").isEmpty, "the tab bar always holds the button")
     }
 }

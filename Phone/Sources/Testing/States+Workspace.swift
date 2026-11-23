@@ -26,6 +26,19 @@ extension StateCatalog {
             _ = app.pages.activate(second)
         },
         NamedState("workspace.single", "Full spread", "Opening a wide window does not create a second page.") { _ in },
+        NamedState("tablet.strip", "iPad: tabs across the top", "Show Tabs in Sidebar off: the Mac's tab bar under the status bar, the address band on the page.") { app in
+            app.workspace.preferences.tabsInSidebar = false
+        },
+        NamedState("tablet.band", "iPad: address bar on", "Show Address Bar on: the band over the page card holds Back, Forward and Reload; the sidebar's header only its door.") { app in
+            app.workspace.preferences.addressBars = true
+        },
+        NamedState("tablet.hidden", "iPad: sidebar hidden", "The sidebar away: the band holds its door, the page's doors, + and All Tabs.") { app in
+            app.workspace.preferences.sidebarShown = false
+        },
+        NamedState("tablet.empty", "iPad: empty space, sidebar hidden", "No tab in the space and the sidebar away: the page area's band keeps the sidebar's door and New Tab.") { app in
+            app.browser.createSpace(name: "Empty", emoji: "🌱", look: SpaceLook(color: RGB(168, 195, 160)))
+            app.workspace.preferences.sidebarShown = false
+        },
         NamedState("tablet.site.desktop", "iPad: desktop site", "Site Controls: Desktop site On, as every site is on an iPad until it is asked for as a mobile one.") { app in
             openSiteControls(app)
         },
@@ -38,6 +51,12 @@ extension StateCatalog {
                 await app.pages.waitUntilPainted(tab.id, timeout: .seconds(12))
             }
             openSiteControls(app)
+        },
+        NamedState("tablet.split.narrow", "iPad: narrow split pane", "Two pages, the sidebar away, the focused one at the 320-point minimum: its address keeps room, + holds the tab buttons.") { app in
+            await StateCatalog.turn(.landscape)
+            app.workspace.preferences.sidebarShown = false
+            app.workspace.preferences.resizeSplit(to: 1, save: false)
+            await StateCatalog.named("workspace.two")?.apply(app)
         },
         NamedState("workspace.two", "Two pages", "Two real pooled pages; the second one owns the controls.") { app in
             guard let current = app.browser.tab,
@@ -246,7 +265,7 @@ private final class DuoRetirementProbe: NSObject {
 }
 
 extension StateCatalog {
-    /// Site Controls in its popover, as its door in the toolbar opens it.
+    /// Site Controls in its popover, as its door in the sidebar or band opens it.
     @MainActor static func openSiteControls(_ app: AppModel) {
         app.openPageMenu()
         app.pageMenu.shown = true

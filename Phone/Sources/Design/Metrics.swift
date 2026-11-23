@@ -41,6 +41,8 @@ enum Metrics {
     // MARK: - the page's chrome
 
     enum Chrome {
+        /// A sheet with no control to point at stands this far over the bottom.
+        static let shareAnchorRise: CGFloat = 44
         /// Plate, round buttons and the field: one height for everything at
         /// the bottom, Safari's 48 (measured off its iOS 26 bar).
         static let height: CGFloat = 48
@@ -631,8 +633,26 @@ enum Metrics {
         static let sidebarMinimum: CGFloat = 220
         static let sidebarMaximum: CGFloat = 360
         static let toolbar: CGFloat = 44
+        /// The Mac's 36-point address band, centered in the 44-point row.
+        static let addressHeight: CGFloat = 36
+        static let rim: CGFloat = 8
         static let paneBar: CGFloat = 44
+        /// The page band's ends stand this far in from the pane's edges.
+        static let bandInset: CGFloat = 4
+        /// The least the band leaves its address: a short host at 13 points.
+        static let bandAddressMinimum: CGFloat = 96
         static let row: CGFloat = 44
+        /// The Mac's row ground, inside the finger's row.
+        static let rowGround: CGFloat = 36
+        static let clearLine: CGFloat = 28
+        /// The spaces not in front, in the foot: the Mac's dimmed marks.
+        static let dimmedSpace: Double = 0.45
+        /// The Mac's two-finger paging (SpacePaging): the row at half the
+        /// travel, a 0.15 give past the ends, and a let-go speed (points a
+        /// second) that keeps going.
+        static let spacePull: CGFloat = 0.5
+        static let spaceGive: CGFloat = 0.15
+        static let spaceFling: CGFloat = 300
         static let splitGap: CGFloat = 8
         static let resizeTarget: CGFloat = 20
         static let inset: CGFloat = 10
@@ -642,13 +662,28 @@ enum Metrics {
         static let downloadsInset: CGFloat = 8
         static let downloadDot: CGFloat = 7
         static let downloadDotInset: CGFloat = 9
+        static let downloadIdleMark: CGFloat = 17
+        static let downloadsTitleFont: CGFloat = 13
+        static let downloadsTitleInset: CGFloat = 6
+        static let downloadsTitleVertical: CGFloat = 10
+        static let pinGap: CGFloat = 7
+        static let pinMinWidth: CGFloat = 47
+        static let pinMaxColumns = 4
+
+        /// The Mac's SideBar.pinColumns: as many as fit, four at most, then
+        /// only as many as keep the rows even, the row filling the width.
+        static func pinColumns(_ count: Int, width: CGFloat) -> Int {
+            guard count > 0 else { return 1 }
+            let fits = min(pinMaxColumns, max(1, Int((width + pinGap) / (pinMinWidth + pinGap))))
+            let rows = (count + fits - 1) / fits
+            return (count + rows - 1) / rows
+        }
         static let pairInset: CGFloat = 4
         static let pairGap: CGFloat = 4
         static let pairRadius: CGFloat = 5
         static let pairIcon: CGFloat = 15
         static let pairPadding: CGFloat = 6
         static let focusStroke: CGFloat = 1.5
-        static let focusColor = Color(red: 86 / 255, green: 125 / 255, blue: 168 / 255)
     }
 
     // MARK: - outside Yab
@@ -674,4 +709,113 @@ enum Metrics {
     static let homeIndicator = CGSize(width: 140, height: 5)
     /// Where the scroll edge's fade is drawn: a 26-point band, blurred 6.
     static let scrollEdge: CGFloat = 26
+}
+
+extension Metrics.Tablet {
+    /// The Mac's sidebar header (Metrics.strip) and its doors (SideBar).
+    static let header: CGFloat = 52
+    static let door: CGFloat = 36
+    static let doorRadius: CGFloat = 10
+    /// The Mac's address plate in the sidebar (SiteControls).
+    static let plate: CGFloat = 36
+    static let plateRadius: CGFloat = 10
+    static let plateFont: CGFloat = 12.5
+    /// The band's address, as the Mac's toolbar writes it.
+    static let bandAddressFont: CGFloat = 13
+    /// The band's doors by kind: Back, Forward and Reload; New Tab and All
+    /// Tabs (downloads beside them when shown); Site Controls.
+    static let bandNavigationDoors = 3
+    static let bandTabButtonDoors = 2
+    static let bandSiteControlsDoors = 1
+    /// The Mac's tab bar: its row, a tab, a pin (Design.swift Density).
+    static let strip: CGFloat = 46
+    static let stripTab: CGFloat = 34
+    static let stripTabWidth: CGFloat = 186
+    static let stripPin: CGFloat = 36
+    static let stripGap: CGFloat = 2
+
+    /// The marks on the iPad's doors: the Mac's glyphs, its drawn assets,
+    /// and the few the Mac draws larger.
+    static let doorMark: CGFloat = 15
+    static let doorArt: CGFloat = 17
+    static let reloadMark: CGFloat = 16
+    static let sidebarMark: CGFloat = 18
+    static let allTabsMark: CGFloat = 17
+    static let newTabMark: CGFloat = 17
+    static let splitMark: CGFloat = 16
+    /// The sidebar's header row and the plate under it.
+    static let headerInset: CGFloat = 6
+    static let plateGap: CGFloat = 8
+    static let plateInset: CGFloat = 12
+    static let plateLock: CGFloat = 12
+    static let plateDoorMark: CGFloat = 14
+    static let plateBelow: CGFloat = 8
+    /// The band's line under it.
+    static let bandRule: CGFloat = 1
+    /// The tab bar's spacing, its space menu and its tabs.
+    static let stripSpacing: CGFloat = 6
+    static let stripInset: CGFloat = 8
+    static let stripScrollInset: CGFloat = 2
+    static let stripEmoji: CGFloat = 15
+    static let stripTabInset: CGFloat = 10
+    static let stripTabGap: CGFloat = 8
+    static let stripTabIcon: CGFloat = 15
+    static let stripPinIcon: CGFloat = 17
+    /// The Mac's 12.5-point labels: a tab bar tab, a split's chip, a space.
+    static let labelFont: CGFloat = 12.5
+    /// The sidebar's list: a swipe that pages the spaces, the pins, the
+    /// Clear line, and the foot with the spaces.
+    static let spaceSwipeStart: CGFloat = 24
+    static let spaceSwipeSlant: CGFloat = 1.5
+    static let pinMark: CGFloat = 24
+    static let pinsBelow: CGFloat = 12
+    static let listTop: CGFloat = 4
+    static let clearGap: CGFloat = 10
+    static let clearFont: CGFloat = 11
+    static let clearInset: CGFloat = 8
+    static let clearRule: CGFloat = 0.5
+    static let rowInset: CGFloat = 10
+    static let footGap: CGFloat = 2
+    static let footInset: CGFloat = 6
+    static let footDot: CGFloat = 9
+    static let footEmoji: CGFloat = 17
+
+    /// Site Controls, the Mac's 280-point panel: an 8-point inset, 28-point
+    /// row marks and 12.5/11.5-point type, touch targets 44 points.
+    enum Site {
+        static let inset: CGFloat = 8
+        static let startHeight: CGFloat = 280
+        static let maxHeight: CGFloat = 480
+        /// The system popover's corner (64 px on a 2x iPad, measured): its
+        /// plates' corners follow it, the popover's radius less their inset.
+        static let popoverCorner: CGFloat = 32
+        static let actionGap: CGFloat = 6
+        static let actionMark: CGFloat = 16
+        static let actionRadius: CGFloat = 12
+        static let headFont: CGFloat = 12
+        static let headInset: CGFloat = 6
+        static let headTop: CGFloat = 12
+        static let headBelow: CGFloat = 4
+        static let rowGap: CGFloat = 10
+        static let rowInset: CGFloat = 6
+        static let mark: CGFloat = 28
+        static let markGlyph: CGFloat = 15
+        static let titleFont: CGFloat = 12.5
+        static let subtitleFont: CGFloat = 11.5
+        static let smallGlyph: CGFloat = 14
+        static let smallRadius: CGFloat = 8
+        static let dividerGap: CGFloat = 6
+        static let connectionGap: CGFloat = 6
+        static let connectionInset: CGFloat = 10
+        static let connectionFont: CGFloat = 12
+        static let backGap: CGFloat = 8
+        static let backGlyph: CGFloat = 14
+        static let detailGap: CGFloat = 8
+        static let factGap: CGFloat = 12
+        /// The hairline between the panel's rows, a row's two lines, and
+        /// the least room before a row's end.
+        static let rowSpacing: CGFloat = 1
+        static let lineGap: CGFloat = 1
+        static let rowEnd: CGFloat = 4
+    }
 }

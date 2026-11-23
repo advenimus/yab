@@ -7,7 +7,11 @@ import SwiftUI
 final class TabletLayoutPreferences {
     @ObservationIgnored private let defaults: UserDefaults?
     var sidebarShown: Bool { didSet { save(sidebarShown, "ipadSidebarShown") } }
-    var addressBars: Bool { didSet { save(addressBars, "ipadAddressBars") } }
+    /// The Mac's Show Address Bar: a band over the page card; off, the
+    /// address is a plate in the sidebar, as the Mac's default.
+    var addressBars: Bool { didSet { save(addressBars, "ipadAddressBar") } }
+    /// The Mac's Show Tabs in Sidebar: off, the tabs go across the top.
+    var tabsInSidebar: Bool { didSet { save(tabsInSidebar, "ipadTabsInSidebar") } }
     var framed: Bool { didSet { save(framed, "ipadPageFrame") } }
     private(set) var sidebarWidth: CGFloat
     private(set) var splitFraction: CGFloat
@@ -18,7 +22,9 @@ final class TabletLayoutPreferences {
             defaults?.object(forKey: key) == nil ? fallback : defaults!.bool(forKey: key)
         }
         sidebarShown = flag("ipadSidebarShown", true)
-        addressBars = flag("ipadAddressBars", true)
+        // A new key: the old one defaulted to the band the Mac keeps off.
+        addressBars = flag("ipadAddressBar", false)
+        tabsInSidebar = flag("ipadTabsInSidebar", true)
         framed = flag("ipadPageFrame", true)
         let width = defaults?.object(forKey: "ipadSidebarWidth") as? Double ?? Double(Metrics.Tablet.sidebar)
         sidebarWidth = Self.width(CGFloat(width))

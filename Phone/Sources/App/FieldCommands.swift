@@ -92,13 +92,14 @@ extension AppModel {
     }
 
     /// A downloads list to open: on iPad a downloads button on screen (the
-    /// sidebar's foot, or the toolbar's while it has something to show); on
-    /// iPhone the plate's Downloads page, which needs a page. The sidebar is
-    /// the one the window lays out: a narrow one hides it while its switch
-    /// stays on.
+    /// sidebar's foot, the tab bar, or the band's while it has something to
+    /// show); on iPhone the plate's Downloads page, which needs a page. The
+    /// sidebar is the one the window lays out: a narrow one hides it while
+    /// its switch stays on.
     var downloadsInReach: Bool {
         guard workspace.tabletControls else { return browser.tab != nil }
-        return tabletGeometry(in: workspace.windowSize).sidebarWidth > 0 || showsToolbarDownloads(sidebarShown: false)
+        let g = tabletGeometry(in: workspace.windowSize)
+        return g.sidebarWidth > 0 || g.strip || showsToolbarDownloads(sidebarShown: false)
     }
 
     /// A private field runs nothing that leaves Private or shows what it
@@ -113,7 +114,7 @@ extension AppModel {
         case .splitView, .separateSplit, .closeSplit: return false
         case let .key(key):
             switch key {
-            case .newPrivateTab, .toggleSidebar: return true
+            case .newPrivateTab, .toggleSidebar, .toggleTabsInSidebar: return true
             case .newTab, .reopenTab, .allTabs, .settings, .openLocation, .nextTab, .previousTab, .tab: return false
             case .closeTab, .reload, .back, .forward, .find, .stop, .zoomIn, .zoomOut, .actualSize,
                  .reader, .copyLink, .print: return page
@@ -147,7 +148,7 @@ extension AppModel {
         }
     }
 
-    /// The iPad's button on screen opens its list (TabletDownloadsButton);
+    /// The iPad's control on screen opens its list (TabletDownloadsHost);
     /// the iPhone's plate opens on its Downloads page.
     func showDownloads() {
         if workspace.tabletControls { workspace.downloadsShown += 1 } else { openDownloadsFromPlate() }
