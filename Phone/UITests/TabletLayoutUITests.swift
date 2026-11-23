@@ -125,6 +125,25 @@ final class TabletLayoutUITests: XCTestCase {
         try picture("09-hidden-bars-command-L")
     }
 
+    /// A site's first file asks from the sidebar's downloads button, and is answerable.
+    func testFirstDownloadAsksFromTheDownloadsButton() throws {
+        launch("downloads.ask")
+        XCTAssertEqual(app.buttons["tablet.downloads.sidebar"].value as? String, "Asking")
+        let download = app.buttons["download.ask.download"]
+        XCTAssertTrue(download.waitForExistence(timeout: 15))
+        XCTAssertTrue(download.isHittable)
+        try picture("12-download-ask")
+        download.tap()
+        XCTAssertTrue(wait { !download.exists })
+    }
+
+    func testDownloadsButtonListsFiles() throws {
+        launch("downloads.now")
+        app.buttons["tablet.downloads.sidebar"].tap()
+        XCTAssertTrue(element("downloads.page").waitForExistence(timeout: 10))
+        try picture("13-downloads-list")
+    }
+
     /// All Tabs: a tap on any card takes that tab, the gallery goes, the workspace returns.
     func testAllTabsCardsOpenTheirTab() throws {
         launch("page.1")
