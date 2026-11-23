@@ -52,7 +52,7 @@ extension AppModel {
                     self.say("Couldn’t save this page", glyph: .exclamationCircle)
                     return
                 }
-                guard let root = Self.topController() else { return }
+                guard let root = Self.topController() else { try? FileManager.default.removeItem(at: folder); return }
                 let sheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
                 sheet.popoverPresentationController?.sourceView = root.view
                 sheet.popoverPresentationController?.sourceRect = Self.shareAnchor(in: root.view)
