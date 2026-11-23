@@ -635,6 +635,11 @@ enum Metrics {
         static let resizeTarget: CGFloat = 20
         static let inset: CGFloat = 10
         static let pin: CGFloat = 48
+        static let downloadsWidth: CGFloat = 340
+        static let downloadsHeight: CGFloat = 480
+        static let downloadsInset: CGFloat = 8
+        static let downloadDot: CGFloat = 7
+        static let downloadDotInset: CGFloat = 9
         static let pairInset: CGFloat = 4
         static let pairGap: CGFloat = 4
         static let pairRadius: CGFloat = 5
