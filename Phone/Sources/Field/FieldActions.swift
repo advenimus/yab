@@ -189,16 +189,12 @@ extension AppModel {
             guard let command = FieldCommand(token: token) else { return }
             closeFieldAfterChoice()
             // Once the field is gone: the keys stay the field's while it is up.
-            DispatchQueue.main.asyncAfter(deadline: .now() + (Motion.disabled ? 0 : Motion.fieldClose.duration)) { [weak self] in
-                self?.run(command, privately: isPrivate)
-            }
+            afterFieldCloses { [weak self] in self?.run(command, privately: isPrivate) }
         case .findOnPage:
             let id = browser.tab?.id
             closeFieldAfterChoice()
             // The field's keyboard goes first; iOS's find bar brings its own.
-            DispatchQueue.main.asyncAfter(deadline: .now() + (Motion.disabled ? 0 : Motion.fieldClose.duration)) { [weak self] in
-                self?.findOnPage(id, text: words)
-            }
+            afterFieldCloses { [weak self] in self?.findOnPage(id, text: words) }
         }
     }
 
@@ -322,6 +318,21 @@ extension AppModel {
         field.endPrivate()
         guard surfaces.field != nil else { return }
         Motion.fieldClose.run { surfaces.closeField() }
+    }
+
+    /// Runs `body` once the field just closed has finished closing: off
+    /// screen, landed on the plate, nothing left over the chrome. Its close
+    /// takes one of several motions (landing, the sheet, the iPad's
+    /// dialog), so it watches their shared end rather than one clock. A
+    /// field opened again before then drops it.
+    func afterFieldCloses(_ body: @escaping @MainActor () -> Void) {
+        guard surfaces.field == nil else { return }
+        let closing = withObservationTracking {
+            field.shown || surfaces.coversChrome
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.afterFieldCloses(body) }
+        }
+        if !closing { body() }
     }
 
     // MARK: - the page's card
