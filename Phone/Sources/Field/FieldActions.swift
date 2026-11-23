@@ -438,7 +438,7 @@ extension AppModel {
                                                idiom: traits.userInterfaceIdiom) {
             return CGRect(x: view.bounds.midX, y: view.safeAreaInsets.top + TabletWorkspaceGeometry.toolbar, width: 1, height: 1)
         }
-        return CGRect(x: view.bounds.midX, y: view.bounds.maxY - 44, width: 1, height: 1)
+        return CGRect(x: view.bounds.midX, y: view.bounds.maxY - Metrics.Chrome.shareAnchorRise, width: 1, height: 1)
     }
 
     /// The screen the app draws on.
