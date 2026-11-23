@@ -85,6 +85,9 @@ enum Ink {
     static let onDark = Color.white
     /// A private tab's glass: rgba(44, 42, 52, .78).
     static let privateGlass = Color(red: 44 / 255, green: 42 / 255, blue: 52 / 255)
+    /// The Mac's thrown file on iPad: near black with a teal glow.
+    static let downloadDiscFill = Color(red: 13 / 255, green: 26 / 255, blue: 20 / 255)
+    static let downloadDiscGlow = Color(red: 90 / 255, green: 190 / 255, blue: 170 / 255)
     /// The iPad's chrome, as the Mac's: a control's ground, the tab in front,
     /// a pin at rest, a press, a dimmed mark, the band and its line.
     static let tabletWash = primary.opacity(0.055)

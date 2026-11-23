@@ -429,6 +429,25 @@ final class PageDownloadTests: XCTestCase {
         try await settles(view, at: site.url("/page"))
     }
 
+    /// Download of the page is not Download Linked File: a link held a
+    /// moment ago on the same page neither throws the disc nor is used up.
+    func testDownloadOfThePageLeavesAHeldLinkAlone() async throws {
+        store.flies = true
+        let source = tab("download.document.held"), view = try await ready(source)
+        pages.load(source.id, site.url("/pic.png"))
+        try await require { view.url == self.site.url("/pic.png") && !view.isLoading && self.pages.state(for: source.id).downloadable }
+        pages.heldLink = (source.id, CGPoint(x: 40, y: 40), ProcessInfo.processInfo.systemUptime)
+        let bumps = store.bumps
+        pages.downloadDocument(of: source.id)
+        try await require { !self.store.entries.isEmpty }
+        XCTAssertTrue(store.flights.isEmpty, "no flight from an old link hold")
+        XCTAssertEqual(store.bumps, bumps + 1, "the button gives instead")
+        XCTAssertEqual(pages.heldLink?.tab, source.id, "the hold is still its link's")
+        let file = try await completed()
+        try await settles(view, at: site.url("/pic.png"))
+        store.delete(file.id)
+    }
+
     /// The app over the pool, as it runs: a public page and another in a
     /// public space, a private one in Private. The viewer's open is seen.
     private func documentApp() -> (AppModel, viewed: () -> [Tab.ID]) {

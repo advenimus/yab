@@ -135,12 +135,12 @@ extension WebPool {
     /// The WKDownload is ours from here. Its source goes by the page it came
     /// from, as the page said it then: its tab may be long gone by Retry.
     /// A document is shown for `viewer` once whole.
-    private func adopt(_ download: WKDownload, tab id: Tab.ID, page: URL?, entry: UUID? = nil,
+    private func adopt(_ download: WKDownload, tab id: Tab.ID, page: URL?, entry: UUID? = nil, from: CGPoint? = nil,
                        opens: Bool = false, viewer: Tab.ID? = nil) {
         let site = siteOf?(id, page)
         let source = PageDownload.Source(tab: id, host: site?.host ?? page?.host() ?? download.originalRequest?.url?.host() ?? "",
                                          isPrivate: site?.isPrivate ?? privateTabs.contains(id))
-        let job = PageDownload(download: download, source: source, store: downloads, entry: entry, opens: opens,
+        let job = PageDownload(download: download, source: source, store: downloads, entry: entry, from: from, opens: opens,
             ask: { [weak self] question, answer in
                 guard let ask = self?.onDownloadAsk else { answer(true); return }
                 ask(question, answer)
@@ -155,11 +155,20 @@ extension WebPool {
 
     /// Download Linked File: the link's bytes through the tab's own store,
     /// the page where it is.
+    /// The file flies from where its link was held, when that is fresh.
     func downloadLinked(_ url: URL, from id: Tab.ID) {
+        let held = heldLink.flatMap { $0.tab == id && ProcessInfo.processInfo.systemUptime - $0.time < PageLinkMenu.heldFreshness ? $0.at : nil }
+        heldLink = nil
+        startDownload(url, from: id, flyingFrom: held)
+    }
+
+    /// `flyingFrom`: where the disc lifts off, in the window; nil, the
+    /// downloads button only gives.
+    private func startDownload(_ url: URL, from id: Tab.ID, flyingFrom held: CGPoint?) {
         guard let view = live[id], canInteract(id, in: view), allowsDownloadOf(url) else { return }
         let page = committedURLs[id] ?? view.url
         view.startDownload(using: URLRequest(url: url)) { [weak self] download in
-            self?.adopt(download, tab: id, page: page)
+            self?.adopt(download, tab: id, page: page, from: held)
         }
     }
 
@@ -185,10 +194,11 @@ extension WebPool {
 
     /// Download, for a page that is a picture, a sound or text: its address
     /// asked again as a linked file, through the tab's own store and cookies,
-    /// with the page and its history left where they are.
+    /// with the page and its history left where they are. No link was held
+    /// for it: a hold left on the page is its link's, not this file's.
     func downloadDocument(of id: Tab.ID) {
         guard documentDownloadable(id), let url = committedURLs[id] else { return }
-        downloadLinked(url, from: id)
+        startDownload(url, from: id, flyingFrom: nil)
     }
 
     func allowsDownloadOf(_ url: URL) -> Bool { ["http", "https"].contains(url.scheme?.lowercased() ?? "") }
@@ -204,5 +214,10 @@ extension WebPool {
             self?.adopt(download, tab: id, page: page, entry: entry)
         }
         return true
+    }
+
+    /// Where a link is held, for Download Linked File to fly from.
+    func noteHeldLink(_ id: Tab.ID, in webView: WKWebView) {
+        if let at = PageLinkMenu.pressPoint(in: webView) { heldLink = (id, at, ProcessInfo.processInfo.systemUptime) }
     }
 }
