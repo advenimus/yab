@@ -1060,6 +1060,34 @@ final class SyncBridgeTests: XCTestCase {
         app.sync.end()
     }
 
+    /// Two of the copy's kept tabs side by side on a Mac: the split view
+    /// goes into the first space with them, not with the copy's delete.
+    func testTheSecondPersonalsSplitViewGoesWithItsTabs() async throws {
+        let server = SyncMemoryServer(), seal = Seal.make()
+        let beside = "https://example.org/beside"
+        let (mac, copy, profile) = try await brokenJoin(server, seal) { app in
+            let tab = PageFixtures.liveTab(for: URL(string: beside)!)
+            app.browser.open(tab)
+            app.browser.keep(tab.id)
+        }
+        let kept = mac.row(copy).kept
+        let a = try XCTUnwrap(kept.first { $0.url == Broken.kept })
+        let b = try XCTUnwrap(kept.first { $0.url == beside }, "\(kept.map(\.url))")
+        let pair = SyncPair(first: a.id, second: b.id, space: copy, share: 0.4)
+        try mac.write(SyncCollection.pair, pair.id, pair.fields)
+        _ = await until { mac.pending == 0 }
+        XCTAssertEqual(mac.row(copy).pairs, [pair], "the Mac's split view")
+        let app = await relaunch(server, profile)
+        let repaired = await until(8) {
+            !mac.journal.living(SyncCollection.space).contains { $0.id == copy } && mac.pending == 0
+        }
+        XCTAssertTrue(repaired, "\(spaceNames(mac))")
+        await settle(mac, app)
+        XCTAssertEqual(Set(mac.row(first).kept.map(\.url)), [Broken.kept, beside])
+        XCTAssertEqual(mac.row(first).pairs, [SyncPair(first: a.id, second: b.id, space: first, share: 0.4)], "the split view is still there")
+        app.sync.end()
+    }
+
     /// Two iPhones and a Mac: the second iPhone took the copy in, then was
     /// away while the first repaired it. Back with its stale journal, it
     /// tidies after the repair: no tab is lost and the copy stays gone.
