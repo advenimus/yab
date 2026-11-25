@@ -98,7 +98,7 @@ struct TabletDownloadsHost: ViewModifier {
         content
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0; land() }
             .onChange(of: active, initial: true) { _, _ in land() }
-            .onDisappear { publish(nil) }
+            .onDisappear { publish(nil); app.downloads.showsList(id, isPrivate: nil) }
             .popover(isPresented: Binding(get: { active && open }, set: { open = $0 }), arrowEdge: .bottom) {
                 TabletDownloadsPanel().environment(app).presentationCompactAdaptation(.popover)
             }
@@ -115,9 +115,9 @@ struct TabletDownloadsHost: ViewModifier {
             }
             // Back on screen, a question still waiting opens it again, as its own.
             .onChange(of: active) { _, shown in if shown && question != nil { ask() } else { open = false } }
-            .onChange(of: open) { _, shown in
-                if shown { app.downloads.listOpened(isPrivate: app.pageIsPrivate) } else { askOpened = false }
-            }
+            .onChange(of: open) { _, shown in if !shown { askOpened = false } }
+            // The list on screen: a file that ends in it was watched.
+            .onChange(of: active && open ? app.pageIsPrivate : nil) { _, isPrivate in app.downloads.showsList(id, isPrivate: isPrivate) }
             .onChange(of: app.workspace.downloadsShown) { _, _ in if active { open = true } }
     }
 

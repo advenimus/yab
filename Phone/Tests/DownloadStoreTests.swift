@@ -89,6 +89,24 @@ final class DownloadStoreTests: XCTestCase {
         XCTAssertEqual(store().entries.map(\.name), ["whole.pdf"])
     }
 
+    /// A file that ends while a list of its own kind is open was watched; one
+    /// the open list doesn't show, or one that ends with Yab away, waits.
+    func testAFileEndingInAnOpenListIsSeen() throws {
+        let store = store()
+        store.showsList("button", isPrivate: false)
+        try finished(store, "seen.pdf")
+        XCTAssertEqual(store.arrival?.seen, true)
+        try finished(store, "secret.pdf", isPrivate: true)
+        XCTAssertEqual(store.arrival?.seen, false, "an ordinary list doesn't show a private file")
+        store.leave()
+        try finished(store, "away.pdf")
+        store.comeBack()
+        XCTAssertEqual(store.arrival?.seen, false, "nobody watched it end")
+        store.showsList("button", isPrivate: nil)
+        try finished(store, "closed.pdf")
+        XCTAssertEqual(store.arrival?.seen, false, "the list closed")
+    }
+
     func testAPrivateFileStaysOutAndGoesWithThePrivateTabs() throws {
         let first = store()
         let id = try finished(first, "secret.pdf", isPrivate: true)

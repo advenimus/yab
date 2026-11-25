@@ -66,6 +66,9 @@ final class DownloadStore {
     /// Something on screen flies files (the iPad's TabletDownloadFlights);
     /// the phone's Now line says it instead.
     @ObservationIgnored var flies = false
+    /// The downloads lists open now (showsList), each of a private page's
+    /// files or an ordinary one's.
+    @ObservationIgnored private var openLists: [String: Bool] = [:]
 
     /// One fact for every screen: each decides how long it shows it.
     struct Arrival: Equatable {
@@ -301,8 +304,18 @@ final class DownloadStore {
     // MARK: - the moment after
 
     private func arrive(_ id: UUID, done: Bool) {
-        Motion.nowGone.run { arrival = Arrival(id: id, done: done, at: away ? nil : Date()) }
-        if !away { sayOnLine(id) }
+        // Ended in a list open on screen of its privacy: watched as it came.
+        let watched = !away && openLists.values.contains(entry(id)?.isPrivate ?? false)
+        Motion.nowGone.run { arrival = Arrival(id: id, done: done, seen: watched, at: away ? nil : Date()) }
+        if !away, !watched { sayOnLine(id) }
+    }
+
+    /// A downloads list on screen (the iPad's popover, by its control's id),
+    /// of a private page's files or an ordinary one's; nil, it closed.
+    /// Opened, it has shown the last file in.
+    func showsList(_ id: String, isPrivate: Bool?) {
+        openLists[id] = isPrivate
+        if let isPrivate { listOpened(isPrivate: isPrivate) }
     }
 
     /// The Now line's two seconds, from when it could be heard.
