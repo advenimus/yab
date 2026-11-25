@@ -1692,7 +1692,7 @@ struct TabHold: ViewModifier {
         let column = ColumnState.of(app)
         Section {
             if app.workspace.canSplit, !tab.isPrivate, !tab.isMail, tab.id != app.browser.tab?.id, app.browser.space.tab(tab.id) != nil {
-                item("Open Beside", .yabSplitPlus) { app.openTabBeside(tab) }
+                item("Split View", .yabSplitPlus) { app.openTabBeside(tab) }
             }
             item("Copy Link", .link) { app.copyLink(of: tab) }
             item("Share", .yabShare) { app.share(tab) }
@@ -1705,18 +1705,18 @@ struct TabHold: ViewModifier {
         if !tab.isPrivate {
             Section {
                 if list != .today, !tab.isMail, let space = app.browser.space(holding: tab.id) {
-                    item("Rename…", .pencil) { app.tabEdits.begin(.tab(space.id, tab)) }
+                    item("Rename Tab…", .pencil) { app.tabEdits.begin(.tab(space.id, tab)) }
                 }
                 MoveToFolderMenu(tab: tab)
                 if list == .pins {
-                    if !tab.isMail { item("Unpin", .pinSlash) { column.unpin(tab.id) } }
+                    if !tab.isMail { item("Unpin Tab", .pinSlash) { column.unpin(tab.id) } }
                 } else {
-                    item("Pin", .pin) { column.pin(tab.id) }
+                    item("Pin Tab", .pin) { column.pin(tab.id) }
                 }
                 if list == .today {
-                    item("Keep", .yabAnchor) { column.keep(tab.id) }
+                    item("Keep Tab", .yabAnchor) { column.keep(tab.id) }
                 } else if list != .pins {
-                    item("Unkeep", .anchor) { column.unkeep(tab.id) }
+                    item("Don't Keep Tab", .anchor) { column.unkeep(tab.id) }
                 }
                 let home = app.browser.space(holding: tab.id)?.id
                 let others = app.browser.spaces.filter { !$0.isPrivate && $0.id != home }
