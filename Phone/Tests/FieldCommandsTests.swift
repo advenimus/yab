@@ -98,6 +98,22 @@ final class FieldCommandsTests: XCTestCase {
         }
     }
 
+    /// Download is offered only over a page that is a file WebKit shows, and
+    /// in Private only when that page is private.
+    func testDownloadIsOfferedOnlyForAPageThatIsAFile() {
+        func offered() -> Bool { commands("download").contains { $0.title == "Download" } }
+        openPage()
+        XCTAssertFalse(offered(), "an HTML page has nothing to download")
+        app.pageStateOverride = WebPool.PageState(downloadable: true)
+        XCTAssertTrue(offered())
+        XCTAssertEqual(app.fieldRows.first?.title, "Download", "typed whole, it leads the rows")
+        app.field.setPrivate(true)
+        XCTAssertFalse(offered(), "a private field leaves the ordinary page alone")
+        app.field.close()
+        openPage(privately: true)
+        XCTAssertTrue(offered(), "a private page in front may keep its file")
+    }
+
     func testDuplicateTabOnAMacTabOpensACopyInThatRowsSpace() throws {
         let space = try XCTUnwrap(app.browser.spaces.first { !$0.isPrivate && $0.id != app.browser.spaceID }?.id)
         let synced = SyncTab(id: "AAAAAAAA-0000-4000-8000-0000000000aa", space: "mac-space",
