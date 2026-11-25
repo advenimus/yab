@@ -69,8 +69,16 @@ extension AppModel {
         root.present(controller, animated: !Motion.disabled)
     }
 
-    /// The print panel with `formatter`.
+    /// The print panel with `formatter`. PrintKit presents it on the
+    /// window's top presented controller even while that one is on its way
+    /// out (Site Controls closing for Print…), and UIKit drops it there: it
+    /// waits until that controller is gone.
     func presentPrint(_ info: UIPrintInfo, _ formatter: UIPrintFormatter, isPrivate: Bool) {
+        if let closing = Self.topController()?.presentedViewController, closing.isBeingDismissed,
+           let transition = closing.transitionCoordinator {
+            transition.animate(alongsideTransition: nil) { [weak self] _ in self?.presentPrint(info, formatter, isPrivate: isPrivate) }
+            return
+        }
         guard mayPresent(isPrivate: isPrivate) else { return }
         let controller = UIPrintInteractionController.shared
         controller.printInfo = info

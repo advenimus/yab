@@ -27,7 +27,9 @@ extension AppModel {
         let info = UIPrintInfo.printInfo()
         info.jobName = tab.title
         info.outputType = .general
-        presentPrint(info, view.viewPrintFormatter(), isPrivate: pageIsPrivate)
+        let formatter = view.viewPrintFormatter(), isPrivate = pageIsPrivate
+        // A turn later, so Site Controls is on its way out from under it.
+        DispatchQueue.main.async { [weak self] in self?.presentPrint(info, formatter, isPrivate: isPrivate) }
     }
 
     /// The page's title as a PDF's name: the whole name, extension and all,
