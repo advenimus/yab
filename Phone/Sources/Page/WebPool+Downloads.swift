@@ -170,11 +170,19 @@ extension WebPool {
         respondedTypes[id] = loads ? (response.response.url, response.response.mimeType) : nil
     }
 
-    /// A commit names its page's type only when the response was for that
-    /// very address: a page back from WebKit's cache brings no response.
-    func commitDocumentType(_ id: Tab.ID, at url: URL?) {
+    /// A commit names its page's type from the response for that very
+    /// address. A page back from WebKit's back-forward cache brings none:
+    /// its type is the one its address had in the tab's history.
+    func commitDocumentType(_ id: Tab.ID, at url: URL?, in view: WKWebView) {
         let responded = respondedTypes.removeValue(forKey: id)
-        documentTypes[id] = responded?.url == url ? responded?.type : nil
+        var known = historyTypes[id] ?? [:]
+        if let url, let responded, responded.url == url { known[url] = responded.type }
+        // Only what the tab's history still holds.
+        let list = view.backForwardList
+        let held = Set(([list.currentItem].compactMap { $0 } + list.backList + list.forwardList).map(\.url) + [url].compactMap { $0 })
+        known = known.filter { held.contains($0.key) }
+        historyTypes[id] = known.isEmpty ? nil : known
+        documentTypes[id] = url.flatMap { known[$0] }
     }
 
     /// The page is a file WebKit shows, at an address Download can ask again:

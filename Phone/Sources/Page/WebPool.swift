@@ -81,6 +81,8 @@ final class WebPool: NSObject {
     /// that load commits (respondedTypes), then for the committed page.
     var respondedTypes: [Tab.ID: (url: URL?, type: String?)] = [:]
     var documentTypes: [Tab.ID: String] = [:]
+    /// The types of the file pages in each tab's history, by address (commitDocumentType).
+    var historyTypes: [Tab.ID: [URL: String]] = [:]
     var downloadConversions: [Tab.ID: DownloadConversion] = [:]
     /// Tabs whose main frame was just sent on to an app's link and refused.
     private var appLinks: Set<Tab.ID> = []
@@ -1037,7 +1039,7 @@ final class WebPool: NSObject {
         downloadOrigins[id] = nil; downloadConversions[id] = nil
         if javaScriptDialog?.tab == id || httpAuthentication?.tab == id { suspendPageDialogs() }
         activeNavigations[id] = nil; documents[id] = nil; committedURLs[id] = nil; loadFailures[id] = nil
-        respondedTypes[id] = nil; documentTypes[id] = nil
+        respondedTypes[id] = nil; documentTypes[id] = nil; historyTypes[id] = nil
         provisional.remove(id)
         endRefresh(id, in: view)
         view.scrollView.refreshControl?.removeTarget(self, action: #selector(pulledToRefresh(_:)), for: .valueChanged)
@@ -1964,7 +1966,7 @@ extension WebPool: WKNavigationDelegate {
         failures[id] = nil
         loadFailures[id] = nil
         committedURLs[id] = webView.url
-        commitDocumentType(id, at: webView.url)
+        commitDocumentType(id, at: webView.url, in: webView)
         readerScroll[id] = nil
         readerGeneration[id] = UUID()
         readerDocuments[id] = nil

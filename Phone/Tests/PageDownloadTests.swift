@@ -574,6 +574,28 @@ final class PageDownloadTests: XCTestCase {
         try? FileManager.default.removeItem(at: folder)
     }
 
+    /// A picture or text page back from WebKit's back-forward cache comes
+    /// with no response: it still offers Download, as before it was left.
+    func testAFilePageBackFromTheCacheStillOffersDownload() async throws {
+        for path in ["/pic.png", "/note.txt"] {
+            let source = tab("download.back\(path.hashValue)"), view = try await ready(source)
+            pages.load(source.id, site.url(path))
+            try await require { view.url == self.site.url(path) && !view.isLoading && self.pages.state(for: source.id).downloadable }
+            pages.load(source.id, site.url("/second"))
+            try await require { view.url == self.site.url("/second") && !view.isLoading }
+            XCTAssertFalse(pages.state(for: source.id).downloadable, "an HTML page has no Download")
+            let asked = site.requests.count
+            XCTAssertTrue(pages.goBack(source.id))
+            try await require { view.url == self.site.url(path) && !view.isLoading && self.pages.painted.contains(source.id) }
+            XCTAssertEqual(site.requests.count, asked, "\(path) came back from the cache, with no response")
+            try await require({ self.pages.state(for: source.id).downloadable }, "\(path) offers Download again")
+            pages.downloadDocument(of: source.id)
+            let file = try await completed()
+            XCTAssertEqual(file.name, String(path.dropFirst()))
+            store.delete(file.id)
+        }
+    }
+
     /// A PDF whose tab was closed before it was whole only lands in
     /// Downloads: the viewer doesn't open over the page in front now.
     func testAClosedSourceTabsPDFLandsWithoutOpening() async throws {
