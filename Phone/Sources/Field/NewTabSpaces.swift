@@ -925,7 +925,7 @@ private struct SpacePage: View {
                 let mineFolded = !macs.isEmpty && folded.contains(Self.mine)
                 if (!space.kept.isEmpty && filter == .everything) || !today.isEmpty || !macs.isEmpty {
                     TodayLine(clear: !today.isEmpty && !mineFolded, spaceID: space.id, isPrivate: false, separator: !space.kept.isEmpty,
-                              label: macs.isEmpty ? nil : "This iPhone", folded: mineFolded, fold: { toggle(Self.mine) },
+                              label: macs.isEmpty ? nil : "This \(DeviceWord.name)", folded: mineFolded, fold: { toggle(Self.mine) },
                               action: {
                                   Haptics.play(.rigid, reason: Haptics.Reason.clear)
                                   Task { @MainActor in await app.tabClear.clear(in: space.id) }
