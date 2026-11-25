@@ -13,6 +13,11 @@ struct TabletDownloadsButton: View {
     @State private var open = false
 
     private var question: DownloadAsk? { app.downloads.asking(isPrivate: app.pageIsPrivate) }
+    /// What the list holds, for VoiceOver: "2 files".
+    private var kept: String {
+        let count = app.downloads.list(isPrivate: app.pageIsPrivate).count
+        return count == 0 ? "" : DownloadWords.files(count)
+    }
     private var busy: Bool { question != nil || app.downloads.list(isPrivate: app.pageIsPrivate).contains(where: \.isRunning) }
 
     var body: some View {
@@ -30,7 +35,7 @@ struct TabletDownloadsButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Downloads")
-        .accessibilityValue(question != nil ? "Asking" : busy ? "Downloading" : "")
+        .accessibilityValue(question != nil ? "Asking" : busy ? "Downloading" : kept)
         .accessibilityIdentifier(id)
         .popover(isPresented: Binding(get: { active && open }, set: { open = $0 }), arrowEdge: .bottom) {
             TabletDownloadsPanel().environment(app).presentationCompactAdaptation(.popover)
@@ -65,11 +70,13 @@ struct TabletDownloadsPanel: View {
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(maxHeight: Metrics.Tablet.downloadsHeight)
+                // The list's own: around the question it would take the card's
+                // name (download.ask), the one element the two make.
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("tablet.downloads")
             }
         }
         .frame(width: Metrics.Tablet.downloadsWidth)
         .animation(Motion.downloadAsk.current, value: app.downloads.asking(isPrivate: isPrivate)?.id)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("tablet.downloads")
     }
 }
