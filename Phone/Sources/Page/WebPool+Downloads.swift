@@ -150,6 +150,34 @@ extension WebPool {
         }
     }
 
+    /// The type of the document a main-frame response loads, kept until
+    /// that load commits.
+    func noteDocumentType(_ response: WKNavigationResponse, loads: Bool, in webView: WKWebView) {
+        guard response.isForMainFrame, let id = tabsByView[ObjectIdentifier(webView)] else { return }
+        respondedTypes[id] = loads ? (response.response.url, response.response.mimeType) : nil
+    }
+
+    /// A commit names its page's type only when the response was for that
+    /// very address: a page back from WebKit's cache brings no response.
+    func commitDocumentType(_ id: Tab.ID, at url: URL?) {
+        let responded = respondedTypes.removeValue(forKey: id)
+        documentTypes[id] = responded?.url == url ? responded?.type : nil
+    }
+
+    /// The page is a file WebKit shows, at an address Download can ask again:
+    /// a blob: or data: document is out of its reach.
+    func documentDownloadable(_ id: Tab.ID) -> Bool {
+        PageDocument.offersDownload(documentTypes[id]) && committedURLs[id].map(allowsDownloadOf) == true
+    }
+
+    /// Download, for a page that is a picture, a sound or text: its address
+    /// asked again as a linked file, through the tab's own store and cookies,
+    /// with the page and its history left where they are.
+    func downloadDocument(of id: Tab.ID) {
+        guard documentDownloadable(id), let url = committedURLs[id] else { return }
+        downloadLinked(url, from: id)
+    }
+
     func allowsDownloadOf(_ url: URL) -> Bool { ["http", "https"].contains(url.scheme?.lowercased() ?? "") }
 
     /// Retry, under its row, in the store it first read: from its tab if it is

@@ -4,8 +4,19 @@ import os
 
 private let printLog = Logger(subsystem: "dev.serafim.fast.iphone", category: "print")
 
-/// The Mac's Print… and Save as PDF for a page.
+/// The Mac's Print… and Save as PDF for a page, and Download for a page
+/// that is a file.
 extension AppModel {
+    /// The page in front is a picture, a sound or text WebKit shows: the
+    /// menus offer Download for it.
+    var pageDownloadable: Bool { browser.tab != nil && currentPageState.downloadable }
+
+    /// Download: the picture, sound or text the page is, into Downloads.
+    func downloadPage() {
+        guard let tab = browser.tab else { return }
+        pages.downloadDocument(of: tab.id)
+    }
+
     /// Print…: the system's print panel with the page as WebKit lays it out for paper.
     func printPage() {
         guard let tab = browser.tab, let view = pages.liveView(tab.id) else { return }
