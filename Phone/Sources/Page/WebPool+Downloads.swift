@@ -129,24 +129,30 @@ extension WebPool {
 
     private func presentDownload(_ download: WKDownload, tab id: Tab.ID, viewer: Tab.ID, in view: WKWebView, origin: DownloadOrigin, opens: Bool) {
         guard canInteract(id, in: view) else { download.cancel(nil); return }
-        adopt(download, tab: id, page: committedURLs[id] == nil ? nil : origin.url, opens: opens, viewer: viewer)
+        let page = committedURLs[id] == nil ? nil : origin.url
+        adopt(download, source: downloadSource(id, page: page, file: download.originalRequest?.url), page: page, opens: opens, viewer: viewer)
     }
 
-    /// The WKDownload is ours from here. Its source goes by the page it came
-    /// from, as the page said it then: its tab may be long gone by Retry.
-    /// A document is shown for `viewer` once whole.
-    private func adopt(_ download: WKDownload, tab id: Tab.ID, page: URL?, entry: UUID? = nil,
-                       opens: Bool = false, viewer: Tab.ID? = nil) {
+    /// Where a file comes from, read while its tab is here: a tab gone by
+    /// the time WebKit hands the file over, or by Retry, reads as public.
+    private func downloadSource(_ id: Tab.ID, page: URL?, file: URL?) -> PageDownload.Source {
         let site = siteOf?(id, page)
-        let source = PageDownload.Source(tab: id, host: site?.host ?? page?.host() ?? download.originalRequest?.url?.host() ?? "",
-                                         isPrivate: site?.isPrivate ?? privateTabs.contains(id))
+        return PageDownload.Source(tab: id, host: site?.host ?? page?.host() ?? file?.host() ?? "",
+                                   isPrivate: site?.isPrivate ?? privateTabs.contains(id))
+    }
+
+    /// The WKDownload is ours from here, under the source its page gave.
+    /// A document is shown for `viewer` once whole.
+    private func adopt(_ download: WKDownload, source: PageDownload.Source, page: URL?, entry: UUID? = nil,
+                       opens: Bool = false, viewer: Tab.ID? = nil) {
+        let id = source.tab
         let job = PageDownload(download: download, source: source, store: downloads, entry: entry, opens: opens,
             ask: { [weak self] question, answer in
                 guard let ask = self?.onDownloadAsk else { answer(true); return }
                 ask(question, answer)
             },
             retry: { [weak self] entry, store, request in
-                self?.retryDownload(entry, store, request, page: page, tab: id) ?? false
+                self?.retryDownload(entry, store, request, source: source, page: page) ?? false
             }, ended: { [weak self] token in self?.transfers[token] = nil },
             viewed: { [weak self] entry in self?.onViewDownload?(viewer ?? id, entry) })
         transfers[job.id] = job
@@ -158,8 +164,9 @@ extension WebPool {
     func downloadLinked(_ url: URL, from id: Tab.ID) {
         guard let view = live[id], canInteract(id, in: view), allowsDownloadOf(url) else { return }
         let page = committedURLs[id] ?? view.url
+        let source = downloadSource(id, page: page, file: url)
         view.startDownload(using: URLRequest(url: url)) { [weak self] download in
-            self?.adopt(download, tab: id, page: page)
+            self?.adopt(download, source: source, page: page)
         }
     }
 
@@ -201,15 +208,16 @@ extension WebPool {
 
     func allowsDownloadOf(_ url: URL) -> Bool { ["http", "https"].contains(url.scheme?.lowercased() ?? "") }
 
-    /// Retry, under its row, in the store it first read: from its tab if it is
-    /// still there, else from any page of that store.
-    private func retryDownload(_ entry: UUID, _ store: WKWebsiteDataStore?, _ request: URLRequest, page: URL?, tab id: Tab.ID) -> Bool {
+    /// Retry, under its row and its first source, in the store it first read:
+    /// from its tab if it is still there, else from any page of that store.
+    private func retryDownload(_ entry: UUID, _ store: WKWebsiteDataStore?, _ request: URLRequest,
+                               source: PageDownload.Source, page: URL?) -> Bool {
         guard let store else { return false }
-        let view = live[id].flatMap { $0.configuration.websiteDataStore === store ? $0 : nil }
+        let view = live[source.tab].flatMap { $0.configuration.websiteDataStore === store ? $0 : nil }
             ?? live.values.first { $0.configuration.websiteDataStore === store }
         guard let view else { return false }
         view.startDownload(using: request) { [weak self] download in
-            self?.adopt(download, tab: id, page: page, entry: entry)
+            self?.adopt(download, source: source, page: page, entry: entry)
         }
         return true
     }

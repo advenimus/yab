@@ -399,6 +399,43 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertTrue(cookie?.contains("public-only=owned") == true); XCTAssertFalse(cookie?.contains("private-only=owned") == true)
     }
 
+    /// A private page's new window that was only a PDF has gone when its
+    /// transfer fails. Retry, from the private opener still there, keeps the
+    /// row private and lands the file in private storage.
+    func testAPrivateWindowsFailedPDFRetriedFromItsOpenerStaysPrivate() async throws {
+        let source = tab("download.retry.window.opener", privateMode: true), view = try await ready(source)
+        var opened: YabPhone.Tab?, closed: [Tab.ID] = []
+        pages.onCloseWindowFrom = { id, _ in closed.append(id) }
+        pages.onOpenWindowFrom = { [unowned self] url, _, shy in
+            XCTAssertTrue(shy)
+            let window = self.tab("download.retry.window", url.path(), privateMode: true)
+            opened = window
+            DispatchQueue.main.async { self.show(self.pages.activate(window)) }
+            return window
+        }
+        view.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        site.failFiles()
+        try await click(view, "pdfwindow")
+        let broken = try await failed()
+        XCTAssertTrue(broken.isPrivate)
+        let window = try XCTUnwrap(opened)
+        XCTAssertEqual(closed, [window.id], "the window that was only the file is gone")
+        XCTAssertFalse(pages.isLive(window.id))
+        show(view)
+        site.allowFiles(); store.retry(broken.id)
+        let file = try await completed()
+        XCTAssertEqual(file.id, broken.id, "Retry works under the same row")
+        XCTAssertTrue(file.isPrivate, "a gone private window's file stays private")
+        XCTAssertEqual(try bytes(file), DownloadSite.pdf)
+        XCTAssertTrue(store.list(isPrivate: false).isEmpty, "nothing in the ordinary Downloads")
+        XCTAssertEqual(store.list(isPrivate: true).map(\.id), [file.id])
+        let saved = try XCTUnwrap(store.url(of: file))
+        XCTAssertEqual(saved.deletingLastPathComponent().lastPathComponent, "private")
+        XCTAssertEqual(site.requests.filter { $0.target == "/doc.pdf" }.count, 2)
+        store.forgetPrivate()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: saved.path), "it was in private storage, gone with Private")
+    }
+
     func testDownloadLinkedFileGoesThroughTheSameFlowFromTheTabsStore() async throws {
         var asked = 0
         pages.onDownloadAsk = { _, answer in asked += 1; answer(true) }
@@ -901,7 +938,7 @@ private final class DownloadSite: @unchecked Sendable {
                 if self.holds {
                     connection.send(content: headers + body.prefix(2), completion: .contentProcessed { _ in })
                     self.held.append((connection, Data(body.dropFirst(2))))
-                } else { self.send(headers + body, connection) }
+                } else { self.send(headers + (self.fails ? Data(body.prefix(2)) : body), connection) }
                 return
             }
             if target == "/file" {

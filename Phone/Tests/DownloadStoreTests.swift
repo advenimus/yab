@@ -105,6 +105,21 @@ final class DownloadStoreTests: XCTestCase {
         XCTAssertEqual(first.entries.map(\.name), ["open.pdf"])
     }
 
+    /// Retry starts a private row again under its id: whatever the new
+    /// transfer says, the row stays private and its file lands in private.
+    func testARetriedPrivateRowStaysPrivate() throws {
+        let store = store()
+        let id = UUID()
+        store.begin(id, name: "secret.pdf", host: "acme.com", total: nil, isPrivate: true, control: .init())
+        store.fail(id, retry: {})
+        store.begin(id, name: "secret.pdf", host: "acme.com", total: nil, isPrivate: false, control: .init())
+        XCTAssertEqual(store.entry(id)?.isPrivate, true)
+        XCTAssertTrue(store.finish(id, from: try incoming()))
+        let entry = try XCTUnwrap(store.entry(id))
+        XCTAssertEqual(try XCTUnwrap(store.url(of: entry)).deletingLastPathComponent().lastPathComponent, "private")
+        XCTAssertTrue(store.list(isPrivate: false).isEmpty)
+    }
+
     /// One fact, the last file in: the iPad's button keeps a done file's
     /// icon, with no timer, until the list or the file opens, or the file goes.
     func testTheLastFileWaitsUntilSeen() throws {

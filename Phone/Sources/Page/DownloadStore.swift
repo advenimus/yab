@@ -169,11 +169,13 @@ final class DownloadStore {
     // MARK: - a transfer
 
     /// A transfer starts, or starts again under a failed row (same `id`).
+    /// A private row stays private, whatever the new transfer says.
     func begin(_ id: UUID, name: String, host: String, total: Int64?, isPrivate: Bool, control: Control) {
         controls[id] = control
+        let at = entries.firstIndex(where: { $0.id == id })
         let entry = DownloadEntry(id: id, name: name, host: SiteSettings.key(host) ?? host, size: total ?? 0, date: Date(),
-                                  state: .running(received: 0, total: total), isPrivate: isPrivate)
-        if let at = entries.firstIndex(where: { $0.id == id }) { entries[at] = entry } else { entries.insert(entry, at: 0) }
+                                  state: .running(received: 0, total: total), isPrivate: isPrivate || at.map { entries[$0].isPrivate } == true)
+        if let at { entries[at] = entry } else { entries.insert(entry, at: 0) }
         if arrival?.id == id { clearArrival() }
     }
 
