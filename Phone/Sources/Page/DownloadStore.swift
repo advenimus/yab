@@ -312,7 +312,7 @@ final class DownloadStore {
 
     /// A downloads list on screen (the iPad's popover, by its control's id),
     /// of a private page's files or an ordinary one's; nil, it closed.
-    /// Opened, it has shown the last file in.
+    /// Opened, it has shown the last file in, when that file is of its kind.
     func showsList(_ id: String, isPrivate: Bool?) {
         openLists[id] = isPrivate
         if let isPrivate { listOpened(isPrivate: isPrivate) }

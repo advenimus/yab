@@ -107,6 +107,23 @@ final class DownloadStoreTests: XCTestCase {
         XCTAssertEqual(store.arrival?.seen, false, "the list closed")
     }
 
+    /// A list opened shows only its own kind's files: the other kind's last
+    /// file still waits on its button.
+    func testOpeningAListSeesOnlyAFileItShows() throws {
+        let store = store()
+        try finished(store, "secret.pdf", isPrivate: true)
+        store.showsList("button", isPrivate: false)
+        XCTAssertEqual(store.arrival?.seen, false, "an ordinary list doesn't show a private file")
+        store.showsList("button", isPrivate: true)
+        XCTAssertEqual(store.arrival?.seen, true)
+        store.showsList("button", isPrivate: nil)
+        try finished(store, "open.pdf")
+        store.showsList("button", isPrivate: true)
+        XCTAssertEqual(store.arrival?.seen, false, "a private list doesn't show an ordinary file")
+        store.showsList("button", isPrivate: false)
+        XCTAssertEqual(store.arrival?.seen, true)
+    }
+
     func testAPrivateFileStaysOutAndGoesWithThePrivateTabs() throws {
         let first = store()
         let id = try finished(first, "secret.pdf", isPrivate: true)
@@ -194,7 +211,7 @@ final class DownloadStoreTests: XCTestCase {
 
     /// A list opened shows only its own kind's files: the other kind's last
     /// file still waits on its button.
-    func testOpeningAListSeesOnlyAFileItShows() throws {
+    func testShowsListSeesOnlyAFileItShows() throws {
         let store = store()
         try finished(store, "secret.pdf", isPrivate: true)
         store.listOpened(isPrivate: false)
