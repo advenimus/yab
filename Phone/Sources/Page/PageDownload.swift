@@ -126,7 +126,9 @@ final class PageDownload: NSObject, WKDownloadDelegate {
         guard !clean.isEmpty, clean != ".", clean != ".." else { return "Download" }
         // A long name is cut before its extension, so a .pdf stays one.
         let ending = (clean as NSString).pathExtension
-        let tail = ending.isEmpty || ending.count > Self.endingLimit ? "" : "." + ending
+        // One character can be hundreds of bytes: the extension is held to
+        // bytes too, so it and "Download" always fit.
+        let tail = ending.isEmpty || ending.count > Self.endingLimit || ending.utf8.count > Self.endingBytes ? "" : "." + ending
         let base = clean.dropLast(tail.count)
         var name = "", byteCount = 0
         // Keep whole graphemes within both the existing character limit and the
@@ -142,6 +144,7 @@ final class PageDownload: NSObject, WKDownloadDelegate {
     /// The longest extension kept whole when a name is cut ("numbers" fits):
     /// past it, the dot is part of the name.
     private static let endingLimit = 10
+    private static let endingBytes = 40
 
     private func answerDestination(_ url: URL?) {
         destinationAnswer?(url)

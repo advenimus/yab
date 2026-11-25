@@ -114,6 +114,24 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertEqual(PageDownload.filename("report.pdf"), "report.pdf")
     }
 
+    /// An extension is one character but 600 bytes: it goes, and the name
+    /// still fits the filesystem's 255 bytes.
+    func testAnExtensionOfOneHugeCharacterStillFitsTheByteLimit() throws {
+        let combined = "e" + String(repeating: "\u{0301}", count: 300)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("owned-download-ending-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        for suggested in ["a." + combined, combined + "." + combined, "report." + String(repeating: "報", count: 10)] {
+            let name = PageDownload.filename(suggested)
+            XCTAssertLessThanOrEqual(name.utf8.count, 255, name)
+            XCTAssertLessThanOrEqual(name.count, 120)
+            let target = folder.appendingPathComponent(name)
+            try DownloadSite.bytes.write(to: target, options: .withoutOverwriting)
+            XCTAssertEqual(try Data(contentsOf: target), DownloadSite.bytes)
+        }
+        XCTAssertEqual(PageDownload.filename("report." + String(repeating: "報", count: 10)), "report." + String(repeating: "報", count: 10), "a short wide extension stays")
+    }
+
     func testUnicodeNamesFitTheActualOwnedFilesystemWithoutBreakingGraphemes() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("owned-download-name-\(UUID())", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
