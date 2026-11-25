@@ -548,6 +548,10 @@ private struct TabletSiteControls: View {
                     .buttonStyle(.plain).accessibilityIdentifier("site.connection")
                     Spacer(minLength: 0)
                     Menu {
+                        // The popover goes first: the panel and the sheet stand in its place.
+                        Button("Print…") { app.surfaces.closeMenu(); app.pageMenu.reset(); app.printPage() }
+                        Button("Save as PDF") { app.surfaces.closeMenu(); app.pageMenu.reset(); app.savePageAsPDF() }
+                        Divider()
                         Button("Clear Cookies and Site Data…", role: .destructive) { app.pageMenu.confirmClear = true }
                         Button("Yab Settings…") { app.pageMenuYabSettings() }
                     } label: { smallFace("TabletMore") }
