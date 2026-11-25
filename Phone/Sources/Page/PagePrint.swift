@@ -33,6 +33,13 @@ extension AppModel {
         controller.present(animated: !Motion.disabled)
     }
 
+    /// The page's title as a PDF's name: the whole name, extension and all,
+    /// within the file system's limits (PageDownload.filename).
+    static func pdfName(_ title: String) -> String {
+        let named = title.isEmpty ? "Page" : title
+        return PageDownload.filename((named as NSString).pathExtension.lowercased() == "pdf" ? named : named + ".pdf")
+    }
+
     /// Save as PDF: the whole page as one PDF, handed to the share sheet
     /// (Save to Files and the rest), named for the page.
     func savePageAsPDF() {
@@ -46,8 +53,7 @@ extension AppModel {
             switch result {
             case let .success(data):
                 let folder = FileManager.default.temporaryDirectory.appendingPathComponent("yab-pdf-\(UUID())", isDirectory: true)
-                let name = PageDownload.filename(tab.title.isEmpty ? "Page" : tab.title)
-                let file = folder.appendingPathComponent((name as NSString).pathExtension.lowercased() == "pdf" ? name : name + ".pdf")
+                let file = folder.appendingPathComponent(Self.pdfName(tab.title))
                 do {
                     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                     try data.write(to: file)

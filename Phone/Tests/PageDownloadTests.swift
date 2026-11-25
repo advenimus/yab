@@ -102,6 +102,18 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertEqual(PageDownload.filename(String(repeating: "é", count: 500)).count, 120)
     }
 
+    /// A long name is cut before its extension, not through it: 100 Chinese
+    /// characters are 300 bytes, and the name stays a .pdf within 255.
+    func testALongNameKeepsItsExtension() {
+        let wide = PageDownload.filename(String(repeating: "報", count: 100) + ".pdf")
+        XCTAssertTrue(wide.hasSuffix(".pdf"), wide)
+        XCTAssertLessThanOrEqual(wide.utf8.count, 255)
+        let long = PageDownload.filename(String(repeating: "a", count: 200) + ".tar.gz")
+        XCTAssertTrue(long.hasSuffix(".gz"), long)
+        XCTAssertEqual(long.count, 120)
+        XCTAssertEqual(PageDownload.filename("report.pdf"), "report.pdf")
+    }
+
     func testUnicodeNamesFitTheActualOwnedFilesystemWithoutBreakingGraphemes() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("owned-download-name-\(UUID())", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
@@ -537,6 +549,29 @@ final class PageDownloadTests: XCTestCase {
             XCTAssertNotEqual(app.surfaces.toast?.text, "Couldn’t save this page", leaving)
             window.rootViewController?.dismiss(animated: false)
         }
+    }
+
+    /// A title of 85 Chinese characters is 255 bytes: the PDF of its page
+    /// still has a name that fits with .pdf, and goes to the share sheet.
+    func testALongTitlesPageSavesAsPDF() async throws {
+        let (app, _) = documentApp()
+        let source = try XCTUnwrap(app.browser.tab)
+        let view = try await ready(source)
+        var titled = try XCTUnwrap(app.browser.tab(source.id))
+        titled.title = String(repeating: "報", count: 85)
+        app.browser.replace(source.id, with: titled)
+        let before = pdfFolders()
+        app.savePageAsPDF()
+        _ = try await view.pdf()
+        try await require({ self.window.rootViewController?.presentedViewController is UIActivityViewController }, "the share sheet with the page's PDF")
+        XCTAssertNotEqual(app.surfaces.toast?.text, "Couldn’t save this page")
+        let made = pdfFolders().subtracting(before)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(try XCTUnwrap(made.first), isDirectory: true)
+        let name = try XCTUnwrap(FileManager.default.contentsOfDirectory(atPath: folder.path).first)
+        XCTAssertTrue(name.hasSuffix(".pdf"), name)
+        XCTAssertLessThanOrEqual(name.utf8.count, 255)
+        window.rootViewController?.dismiss(animated: false)
+        try? FileManager.default.removeItem(at: folder)
     }
 
     /// A PDF whose tab was closed before it was whole only lands in
