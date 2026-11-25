@@ -116,10 +116,14 @@ struct TabletDownloadsHost: ViewModifier {
             // Back on screen, a question still waiting opens it again, as its own.
             .onChange(of: active) { _, shown in if shown && question != nil { ask() } else { open = false } }
             .onChange(of: open) { _, shown in if !shown { askOpened = false } }
-            // The list on screen: a file that ends in it was watched.
-            .onChange(of: active && open ? app.pageIsPrivate : nil) { _, isPrivate in app.downloads.showsList(id, isPrivate: isPrivate) }
+            // The list on screen: a file that ends in it was watched. A
+            // question stands in the popover in its place, and one that
+            // opened the popover closes it with its answer.
+            .onChange(of: listShown ? app.pageIsPrivate : nil) { _, isPrivate in app.downloads.showsList(id, isPrivate: isPrivate) }
             .onChange(of: app.workspace.downloadsShown) { _, _ in if active { open = true } }
     }
+
+    private var listShown: Bool { active && open && question == nil && !askOpened }
 
     /// Opens the popover for the question: the question's, unless it was open already.
     private func ask() {

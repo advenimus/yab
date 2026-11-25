@@ -31,7 +31,8 @@ final class TabletDownloadsTests: XCTestCase {
         return file
     }
 
-    func testAFileThatEndsWhileTheListIsOpenIsSeen() async throws {
+    /// The button on screen in a window of its own.
+    private func button() async throws -> (AppModel, UIHostingController<some View>) {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first(where: { $0.activationState == .foregroundActive }))
         previousKey = scene.windows.first(where: \.isKeyWindow)
@@ -45,6 +46,24 @@ final class TabletDownloadsTests: XCTestCase {
         owned.layoutIfNeeded()
         let drawn = await until { app.workspace.downloadsLandings["test.downloads"] != nil }
         XCTAssertTrue(drawn, "the button is on screen")
+        return (app, host)
+    }
+
+    /// A file that ended with no list open: the button waits on it.
+    private func unseenFile(_ app: AppModel) throws -> UUID {
+        let id = UUID()
+        app.downloads.begin(id, name: "report.pdf", host: "acme.com", total: nil, isPrivate: false, control: .init())
+        XCTAssertTrue(app.downloads.finish(id, from: try incoming()))
+        XCTAssertEqual(app.downloads.arrival?.seen, false)
+        return id
+    }
+
+    private func question() -> DownloadAsk {
+        DownloadAsk(id: UUID(), name: "slides.zip", host: "other.com", size: 2_900_000, isPrivate: false)
+    }
+
+    func testAFileThatEndsWhileTheListIsOpenIsSeen() async throws {
+        let (app, host) = try await button()
         app.workspace.downloadsShown += 1
         let shown = await until { host.presentedViewController != nil }
         XCTAssertTrue(shown, "the list is open")
@@ -59,5 +78,46 @@ final class TabletDownloadsTests: XCTestCase {
         let closed = await until { host.presentedViewController == nil }
         XCTAssertTrue(closed)
         XCTAssertEqual(app.downloads.arrival?.seen, true, "the button doesn't wait on a file already seen")
+    }
+
+    /// Another site's question takes the popover, not the list: the file
+    /// waiting before it is still waiting once the question is cancelled,
+    /// and the list opened then shows it.
+    func testAQuestionLeavesAnEarlierFileUnseen() async throws {
+        let (app, host) = try await button()
+        let file = try unseenFile(app)
+        let ask = question()
+        app.downloads.pretend(ask: ask)
+        let asked = await until { host.presentedViewController != nil }
+        XCTAssertTrue(asked, "the question opens the popover")
+        XCTAssertEqual(app.downloads.arrival?.seen, false, "the question is not the list")
+
+        app.answerDownload(ask, false)
+        let closed = await until { host.presentedViewController == nil }
+        XCTAssertTrue(closed, "the popover the question opened goes with it")
+        XCTAssertEqual(app.downloads.arrival?.id, file)
+        XCTAssertEqual(app.downloads.arrival?.seen, false, "cancelling keeps the file waiting")
+
+        app.workspace.downloadsShown += 1
+        let listed = await until { host.presentedViewController != nil }
+        XCTAssertTrue(listed)
+        XCTAssertEqual(app.downloads.arrival?.seen, true, "the list shows it")
+    }
+
+    /// A file that ends while the question stands in the popover was not
+    /// watched: the list never showed it.
+    func testAFileThatEndsBehindAQuestionIsUnseen() async throws {
+        let (app, host) = try await button()
+        let ask = question()
+        app.downloads.pretend(ask: ask)
+        let asked = await until { host.presentedViewController != nil }
+        XCTAssertTrue(asked)
+        let file = try unseenFile(app)
+
+        app.answerDownload(ask, false)
+        let closed = await until { host.presentedViewController == nil }
+        XCTAssertTrue(closed)
+        XCTAssertEqual(app.downloads.arrival?.id, file)
+        XCTAssertEqual(app.downloads.arrival?.seen, false, "it still waits on the button")
     }
 }
