@@ -550,7 +550,9 @@ private struct TabletSiteControls: View {
                     Menu {
                         // The popover goes first: the panel and the sheet stand in its place.
                         Button("Print…") { app.surfaces.closeMenu(); app.pageMenu.reset(); app.printPage() }
+                            .disabled(!app.pageCanBeDrawn)
                         Button("Save as PDF") { app.surfaces.closeMenu(); app.pageMenu.reset(); app.savePageAsPDF() }
+                            .disabled(!app.pageCanBeDrawn)
                         if app.pageDownloadable {
                             Button("Download") { app.surfaces.closeMenu(); app.pageMenu.reset(); app.downloadPage() }
                         }

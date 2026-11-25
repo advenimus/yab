@@ -17,6 +17,10 @@ extension AppModel {
         pages.downloadDocument(of: tab.id)
     }
 
+    /// Print and Save as PDF draw the page WebKit has for the tab in front:
+    /// a tab not loaded yet (restored, or a Mac's) has none.
+    var pageCanBeDrawn: Bool { browser.tab.map { pages.isLive($0.id) } ?? false }
+
     /// Print…: the system's print panel with the page as WebKit lays it out for paper.
     func printPage() {
         guard let tab = browser.tab, let view = pages.liveView(tab.id) else { return }
