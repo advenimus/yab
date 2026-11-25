@@ -107,6 +107,51 @@ final class BrowserKeysTests: XCTestCase {
         XCTAssertTrue(app.surfaces.settings, "and Settings stays as it is")
     }
 
+    func testShiftCommandNOpensAPrivateNewTab() throws {
+        XCTAssertEqual(BrowserKey.newPrivateTab.input, "n")
+        XCTAssertEqual(BrowserKey.newPrivateTab.modifiers, [.command, .shift])
+        XCTAssertTrue(try press(.newPrivateTab))
+        XCTAssertEqual(app.surfaces.field, .newTab)
+        XCTAssertTrue(app.field.isPrivate)
+    }
+
+    func testPageKeysFollowTheMacsViewMenu() throws {
+        XCTAssertEqual(BrowserKey.zoomIn.input, "=")
+        XCTAssertEqual(BrowserKey.reader.modifiers, [.command, .shift])
+        XCTAssertEqual(app.mayUse(.stop), app.currentPageState.isLoading, "Stop only while the page loads")
+        XCTAssertFalse(app.mayUse(.reader), "no reader for this page")
+        XCTAssertTrue(try press(.zoomIn))
+        XCTAssertEqual(app.pageZoom, 1.1, accuracy: 0.001)
+        XCTAssertTrue(try press(.actualSize))
+        XCTAssertEqual(app.pageZoom, 1, accuracy: 0.001)
+        XCTAssertTrue(try press(.zoomOut))
+        XCTAssertEqual(app.pageZoom, 0.9, accuracy: 0.001)
+        app.pageMenuZoom(0)
+    }
+
+    func testOpenInSplitViewPairsTheLinkBesideItsPage() throws {
+        app.workspace.resize(expanded: true)
+        app.workspace.windowSize = CGSize(width: 1376, height: 1032)
+        let source = try XCTUnwrap(app.browser.tab?.id)
+        XCTAssertTrue(app.canOpenLinkBeside(source))
+        app.openHeldLink(URL(string: "https://example.com/beside")!, from: source, as: .beside)
+        XCTAssertTrue(app.workspace.paired)
+        XCTAssertEqual(app.workspace.first, source)
+        XCTAssertEqual(app.browser.tab?.navigationURL?.absoluteString, "https://example.com/beside")
+        app.workspace.windowSize = CGSize(width: 800, height: 1100)
+        XCTAssertFalse(app.canOpenLinkBeside(source), "no split in a narrow window")
+    }
+
+    func testDuplicateTabOpensTheSamePageInFront() throws {
+        let tab = Tab(id: "web", title: "Example", site: "Example", icon: "globe", url: "https://example.com/a")
+        app.browser.open(tab, deduplicate: false)
+        let before = app.browser.space.allTabs.count
+        app.duplicate(tab)
+        XCTAssertEqual(app.browser.space.allTabs.count, before + 1)
+        XCTAssertNotEqual(app.browser.tab?.id, "web")
+        XCTAssertEqual(app.browser.tab?.navigationURL, tab.navigationURL)
+    }
+
     func testCommandLOpensTheAddress() throws {
         XCTAssertTrue(try press(.openLocation))
         XCTAssertEqual(app.surfaces.field, .address)
