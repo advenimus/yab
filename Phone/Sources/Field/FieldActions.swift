@@ -385,16 +385,10 @@ extension AppModel {
         // items iOS offers Add to Home Screen, as from Safari (#2034).
         // Never a private page's: the home screen would keep it.
         let page = tab.isPrivate ? nil : pages.liveView(tab.id)
+        let isPrivate = tab.isPrivate || browser.space(holding: tab.id)?.isPrivate == true
         // A turn later, so the field or the menu is gone from under it.
-        DispatchQueue.main.async {
-            guard let root = Self.topController() else { return }
-            let items: [Any] = page.map { [url, $0] } ?? [url]
-            let sheet = UIActivityViewController(activityItems: items, applicationActivities: [OpenInSafariActivity()])
-            // On iPad it is a popover, and UIKit throws without an anchor
-            // (register 1142), as PageDownload's share does.
-            sheet.popoverPresentationController?.sourceView = root.view
-            sheet.popoverPresentationController?.sourceRect = Self.shareAnchor(in: root.view)
-            root.present(sheet, animated: !Motion.disabled)
+        DispatchQueue.main.async { [weak self] in
+            self?.presentShare(page.map { [url, $0] } ?? [url], activities: [OpenInSafariActivity()], isPrivate: isPrivate)
         }
     }
 

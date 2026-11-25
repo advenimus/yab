@@ -52,6 +52,8 @@ final class AppModel {
     }()
 
     @ObservationIgnored lazy var tabClear = TabClearCoordinator(app: self)
+    /// The system's panels a private page has open (Page/PagePanels).
+    @ObservationIgnored let privatePanels = PrivatePanels()
     /// Going back: who opened which tab, the pull from the left edge, Undo
     /// after a close (Back/).
     @ObservationIgnored lazy var backStack = BackStack(app: self)

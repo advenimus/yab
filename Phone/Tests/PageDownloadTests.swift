@@ -498,7 +498,8 @@ final class PageDownloadTests: XCTestCase {
 
     /// The app over the pool, as it runs: a public page and another in a
     /// public space, a private one in Private. The viewer's open is seen.
-    private func documentApp(locks: @escaping @MainActor () -> Bool = { false }) -> (AppModel, viewed: () -> [Tab.ID]) {
+    private func documentApp(locks: @escaping @MainActor () -> Bool = { false },
+                             authentication: (any PrivateAuthenticating)? = nil) -> (AppModel, viewed: () -> [Tab.ID]) {
         let page = { (id: String, isPrivate: Bool) in
             YabPhone.Tab(id: id, title: id, site: "127.0.0.1", icon: "globe", url: self.site.url("/page").absoluteString, isPrivate: isPrivate)
         }
@@ -509,7 +510,8 @@ final class PageDownloadTests: XCTestCase {
                   today: [page("viewer.secret", true)], current: "viewer.secret", isPrivate: true)
         ], mac: World.Mac(joined: false))
         // Its files in a folder of the test's own, not the app's Downloads.
-        let app = AppModel(world: world, fixturesEnabled: false, privateLockEnabled: locks, downloads: .temporary())
+        let app = AppModel(world: world, fixturesEnabled: false, privateAuthentication: authentication,
+                           privateLockEnabled: locks, downloads: .temporary())
         pages = app.pages
         ids += ["viewer.page", "viewer.other", "viewer.secret"]
         var viewed: [Tab.ID] = []
@@ -585,7 +587,7 @@ final class PageDownloadTests: XCTestCase {
             app.browser.select(secret.id)
             let view = try await ready(secret)
             XCTAssertTrue(app.pageIsPrivate)
-            let before = pdfFolders()
+            let before = madePDFs(app)
             app.savePageAsPDF()
             if leaving == "left" {
                 app.browser.select("viewer.other")
@@ -600,10 +602,126 @@ final class PageDownloadTests: XCTestCase {
             _ = try await view.pdf()
             await Task.yield()
             XCTAssertNil(window.rootViewController?.presentedViewController, "\(leaving): no share sheet of the private page")
-            XCTAssertEqual(pdfFolders(), before, "\(leaving): no file of it")
+            XCTAssertEqual(madePDFs(app), before, "\(leaving): no file of it")
             XCTAssertNotEqual(app.surfaces.toast?.text, "Couldn’t save this page", leaving)
             window.rootViewController?.dismiss(animated: false)
         }
+    }
+
+    /// The device says yes at once: Open with Face ID, unlocked.
+    private final class Allow: PrivateAuthenticating {
+        func authenticate(_ completion: @escaping @MainActor (PrivateAuthenticationResult) -> Void) { completion(.unlocked) }
+        func invalidate() {}
+    }
+
+    /// A private page in front, Private unlocked with Open with Face ID on.
+    private func unlockedSecret() async throws -> (AppModel, WKWebView) {
+        let (app, _) = documentApp(locks: { true }, authentication: Allow())
+        app.privateLock.unlock()
+        XCTAssertEqual(app.privateLock.phase, .unlocked)
+        let secret = try XCTUnwrap(app.browser.tab("viewer.secret"))
+        app.browser.select(secret.id)
+        XCTAssertTrue(app.privateLock.mayReveal)
+        return (app, try await ready(secret))
+    }
+
+    /// Every PDF of a page Yab made and still keeps, in any of its folders.
+    private func madePDFs(_ app: AppModel) -> [String] {
+        let manager = FileManager.default
+        let temporary = pdfFolders().map { manager.temporaryDirectory.appendingPathComponent($0, isDirectory: true) }
+        return (temporary + [app.downloads.privateFolder]).flatMap { root in
+            (manager.enumerator(at: root, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+                .filter { $0.pathExtension == "pdf" && $0.path.contains("yab-pdf-") }.map(\.path)
+        }
+    }
+
+    /// Save as PDF's share sheet over a private page, then Private locks as
+    /// Yab goes (Open with Face ID): the sheet goes before the system's
+    /// snapshot, and its file with it. Back in Yab, the lock, and no sheet.
+    func testAPrivatePagesPDFSheetGoesWithItsFileWhenPrivateLocks() async throws {
+        for away in ["inactive", "background"] {
+            let (app, view) = try await unlockedSecret()
+            let before = Set(madePDFs(app))
+            app.savePageAsPDF()
+            _ = try await view.pdf()
+            try await require({ self.window.rootViewController?.presentedViewController is UIActivityViewController }, "\(away): the share sheet")
+            XCTAssertEqual(Set(madePDFs(app)).subtracting(before).count, 1, away)
+            app.privateLock.willResignActive()
+            if away == "background" { app.privateLock.didEnterBackground() }
+            try await require({ self.window.rootViewController?.presentedViewController == nil }, "\(away): the sheet stayed over locked Private")
+            XCTAssertEqual(Set(madePDFs(app)), before, "\(away): the private PDF stayed")
+            app.privateLock.didBecomeActive()
+            XCTAssertTrue(app.privateContentBlocked, "\(away): back, Private is locked")
+            XCTAssertNil(window.rootViewController?.presentedViewController, "\(away): and nothing over the lock")
+        }
+    }
+
+    /// Without Open with Face ID, Private doesn't lock as Yab goes: the
+    /// sheet stays with its page, under the curtain while Yab is away.
+    func testAPrivatePagesPDFSheetStaysWithItsPageWithoutTheLock() async throws {
+        let (app, _) = documentApp()
+        let secret = try XCTUnwrap(app.browser.tab("viewer.secret"))
+        app.browser.select(secret.id)
+        let view = try await ready(secret)
+        let before = Set(madePDFs(app))
+        app.savePageAsPDF()
+        _ = try await view.pdf()
+        try await require({ self.window.rootViewController?.presentedViewController is UIActivityViewController }, "the share sheet")
+        app.privateLock.willResignActive()
+        app.privateLock.didEnterBackground()
+        app.privateLock.didBecomeActive()
+        await Task.yield()
+        XCTAssertTrue(window.rootViewController?.presentedViewController is UIActivityViewController)
+        let made = Set(madePDFs(app)).subtracting(before)
+        XCTAssertEqual(made.count, 1)
+        window.rootViewController?.dismiss(animated: false)
+        made.forEach { try? FileManager.default.removeItem(atPath: ($0 as NSString).deletingLastPathComponent) }
+    }
+
+    /// Yab ended with a private page's PDF in its share sheet (the sheet's
+    /// own end never came): the next launch finds no file of it.
+    func testAPrivatePagesPDFIsGoneAtTheNextLaunch() async throws {
+        let (app, view) = try await unlockedSecret()
+        let before = Set(madePDFs(app))
+        app.savePageAsPDF()
+        _ = try await view.pdf()
+        try await require({ self.window.rootViewController?.presentedViewController is UIActivityViewController }, "the share sheet")
+        let made = Set(madePDFs(app)).subtracting(before)
+        XCTAssertEqual(made.count, 1)
+        let sheet = window.rootViewController?.presentedViewController as? UIActivityViewController
+        sheet?.completionWithItemsHandler = nil
+        window.rootViewController?.dismiss(animated: false)
+        // The next launch: a store over the same folders.
+        _ = DownloadStore(folder: app.downloads.privateFolder.deletingLastPathComponent().appendingPathComponent("Downloads"),
+                          privateFolder: app.downloads.privateFolder, index: nil)
+        XCTAssertTrue(made.allSatisfy { !FileManager.default.fileExists(atPath: $0) }, "the private PDF outlived Yab")
+        made.forEach { try? FileManager.default.removeItem(atPath: ($0 as NSString).deletingLastPathComponent) }
+    }
+
+    /// The system's viewer with a private file, then Private locks: the
+    /// viewer goes; the file stays in Private's Downloads.
+    func testAPrivateDocumentsViewerGoesWhenPrivateLocks() async throws {
+        let (app, _) = try await unlockedSecret()
+        let file = DownloadEntry(id: UUID(), name: "secret.pdf", host: "127.0.0.1", size: 3, date: Date(), state: .done,
+                                 isPrivate: true, file: "secret.pdf")
+        app.downloads.pretend([file])
+        app.openDownload(file)
+        try await require({ self.window.rootViewController?.presentedViewController != nil }, "the viewer")
+        app.privateLock.willResignActive()
+        app.privateLock.didEnterBackground()
+        try await require({ self.window.rootViewController?.presentedViewController == nil }, "the viewer stayed over locked Private")
+        app.privateLock.didBecomeActive()
+        XCTAssertTrue(app.privateContentBlocked)
+    }
+
+    /// The print panel over a private page, then Private locks: the panel goes.
+    func testAPrivatePagesPrintPanelGoesWhenPrivateLocks() async throws {
+        let (app, _) = try await unlockedSecret()
+        app.printPage()
+        try await require({ self.window.rootViewController?.presentedViewController != nil }, "the print panel")
+        app.privateLock.willResignActive()
+        app.privateLock.didEnterBackground()
+        try await require({ self.window.rootViewController?.presentedViewController == nil }, "the print panel stayed over locked Private")
     }
 
     /// A title of 85 Chinese characters is 255 bytes: the PDF of its page

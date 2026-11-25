@@ -78,7 +78,7 @@ final class DownloadStore {
     }
 
     private let folder: URL
-    private let privateFolder: URL
+    let privateFolder: URL
     private let index: URL?
     @ObservationIgnored private var controls: [UUID: Control] = [:]
     @ObservationIgnored private var answers: [UUID: @MainActor (Bool) -> Void] = [:]
@@ -253,6 +253,14 @@ final class DownloadStore {
         if let url = url(of: entry) { try? FileManager.default.removeItem(at: url) }
         drop(id)
         save()
+    }
+
+    /// A new folder for a file Yab makes to hand on (a page as a PDF). A
+    /// private page's is in the private folder: it goes with the private
+    /// tabs, and at the next launch if Yab ended with it there.
+    func exportFolder(isPrivate: Bool) -> URL {
+        (isPrivate ? privateFolder : FileManager.default.temporaryDirectory)
+            .appendingPathComponent("yab-pdf-\(UUID())", isDirectory: true)
     }
 
     /// The private tabs are gone, and with them their files.

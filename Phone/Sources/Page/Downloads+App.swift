@@ -120,19 +120,13 @@ extension AppModel {
     func openDownload(_ file: DownloadEntry) {
         guard let url = downloads.url(of: file) else { return }
         downloads.seen(file.id)
-        FilePreview.show(url)
+        presentPreview(url, isPrivate: file.isPrivate)
     }
 
     func shareDownload(_ file: DownloadEntry) {
         guard let url = downloads.url(of: file) else { return }
         // A turn later, so the row's menu is gone from under it.
-        DispatchQueue.main.async {
-            guard let root = Self.topController() else { return }
-            let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-            sheet.popoverPresentationController?.sourceView = root.view
-            sheet.popoverPresentationController?.sourceRect = Self.shareAnchor(in: root.view)
-            root.present(sheet, animated: !Motion.disabled)
-        }
+        DispatchQueue.main.async { [weak self] in self?.presentShare([url], isPrivate: file.isPrivate) }
     }
 
     func showDownloadInFiles(_ file: DownloadEntry) {

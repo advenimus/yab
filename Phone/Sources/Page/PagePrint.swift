@@ -27,10 +27,7 @@ extension AppModel {
         let info = UIPrintInfo.printInfo()
         info.jobName = tab.title
         info.outputType = .general
-        let controller = UIPrintInteractionController.shared
-        controller.printInfo = info
-        controller.printFormatter = view.viewPrintFormatter()
-        controller.present(animated: !Motion.disabled)
+        presentPrint(info, view.viewPrintFormatter(), isPrivate: pageIsPrivate)
     }
 
     /// The page's title as a PDF's name: the whole name, extension and all,
@@ -52,7 +49,7 @@ extension AppModel {
                                           appActive: UIApplication.shared.applicationState == .active) else { return }
             switch result {
             case let .success(data):
-                let folder = FileManager.default.temporaryDirectory.appendingPathComponent("yab-pdf-\(UUID())", isDirectory: true)
+                let folder = self.downloads.exportFolder(isPrivate: isPrivate)
                 let file = folder.appendingPathComponent(Self.pdfName(tab.title))
                 do {
                     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -62,12 +59,7 @@ extension AppModel {
                     self.say("Couldn’t save this page", glyph: .exclamationCircle)
                     return
                 }
-                guard let root = Self.topController() else { try? FileManager.default.removeItem(at: folder); return }
-                let sheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
-                sheet.popoverPresentationController?.sourceView = root.view
-                sheet.popoverPresentationController?.sourceRect = Self.shareAnchor(in: root.view)
-                sheet.completionWithItemsHandler = { _, _, _, _ in try? FileManager.default.removeItem(at: folder) }
-                root.present(sheet, animated: !Motion.disabled)
+                self.presentShare([file], isPrivate: isPrivate, made: folder)
             case let .failure(error):
                 printLog.error("save as PDF: \(error.localizedDescription, privacy: .public)")
                 self.say("Couldn’t save this page", glyph: .exclamationCircle)
