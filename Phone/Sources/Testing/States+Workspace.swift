@@ -30,7 +30,13 @@ extension StateCatalog {
             openSiteControls(app)
         },
         NamedState("tablet.site.mobile", "iPad: mobile site", "Site Controls for a site asked for as a mobile one: Desktop site Off, the page in its phone layout.") { app in
-            if let tab = app.browser.tab { app.siteSettings.setVersion(.mobile, for: app.siteHost(of: tab), isPrivate: false) }
+            if let tab = app.browser.tab {
+                app.siteSettings.setVersion(.mobile, for: app.siteHost(of: tab), isPrivate: false)
+                // The page again, as the switch would: it is the phone layout, as it says.
+                _ = app.pages.activate(tab)
+                app.pages.reload(tab.id)
+                await app.pages.waitUntilPainted(tab.id, timeout: .seconds(12))
+            }
             openSiteControls(app)
         },
         NamedState("workspace.two", "Two pages", "Two real pooled pages; the second one owns the controls.") { app in

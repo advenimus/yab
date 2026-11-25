@@ -71,6 +71,29 @@ final class PageMenuTests: XCTestCase {
         XCTAssertFalse(app.siteSettings.desktop("figma.com", isPrivate: false))
     }
 
+    /// An iPad left to its own choice gets Safari's: mobile in a narrow pane.
+    /// The switch reads that page, not the choice: Off, and its first tap
+    /// asks for the desktop site, rather than for the mobile one it shows.
+    func testTheDesktopSwitchReadsANarrowPanesMobilePage() async throws {
+        app.siteSettings.prefersDesktop = true
+        let tab = try XCTUnwrap(app.browser.tab)
+        let host = app.siteHost(of: tab)
+        XCTAssertEqual(app.siteSettings.version(host, isPrivate: false), .automatic)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let view = app.pages.activate(tab)
+        view.frame = window.bounds
+        window.addSubview(view)
+        await app.pages.waitUntilPainted(tab.id)
+        let end = Date().addingTimeInterval(10)
+        while app.pages.state(for: tab.id).isLoading, Date() < end { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertFalse(app.pageIsDesktop, "a narrow pane's page is the mobile site")
+        app.pageMenuDesktop()
+        XCTAssertEqual(app.siteSettings.version(host, isPrivate: false), .desktop, "the first tap asks for the desktop site")
+        XCTAssertTrue(app.pageIsDesktop)
+    }
+
     /// As Safari on iPad: desktop sites unless a site is asked for as a mobile one.
     func testAnIPadAsksForDesktopSitesUnlessTold() throws {
         let settings = SiteSettings(defaults: nil, prefersDesktop: true)
