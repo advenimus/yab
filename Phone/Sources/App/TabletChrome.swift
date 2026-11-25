@@ -518,7 +518,7 @@ struct TabletTabStrip: View {
         .accessibilityLabel(tab.short)
         .accessibilityAddTraits(tab.id == space.current ? .isSelected : [])
         .accessibilityIdentifier("tablet.pin.\(tab.id)")
-        .modifier(TabHold(tab: tab, list: .pins))
+        .modifier(TabHold(tab: tab, list: .pins, page: space.id))
     }
 
     private func tab(_ tab: Tab) -> some View {
