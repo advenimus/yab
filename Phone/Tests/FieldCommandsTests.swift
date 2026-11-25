@@ -89,6 +89,31 @@ final class FieldCommandsTests: XCTestCase {
         XCTAssertEqual(app.browser.space.allTabs.count, before + 1, "one copy, not two")
     }
 
+    /// A command chosen belongs to the field it was chosen in. The field
+    /// opened again before that one has finished closing drops it for good:
+    /// closing the new field runs nothing from the old choice.
+    func testACommandChosenBeforeAReopenedFieldClosesNeverRunsAfterIt() async throws {
+        openPage()
+        let other = PageFixtures.liveTab(for: URL(string: "https://example.com/b")!)
+        app.browser.open(other, deduplicate: false)
+        let before = app.browser.space.allTabs.count
+        app.surfaces.openField(.address)
+        app.choose(try XCTUnwrap(commands("close tab").first))
+        XCTAssertNil(app.surfaces.field)
+        XCTAssertTrue(app.field.shown, "the first field is still closing")
+        app.surfaces.openField(.address)
+        app.field.close()
+        try await until { !app.field.shown && app.surfaces.field == nil }
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertEqual(app.browser.space.allTabs.count, before, "the old Close Tab must not run")
+
+        app.surfaces.openField(.address)
+        app.choose(try XCTUnwrap(commands("close tab").first))
+        try await until { app.browser.space.allTabs.count == before - 1 }
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertEqual(app.browser.space.allTabs.count, before - 1, "a new choice runs once")
+    }
+
     func testPrivateOffersOnlyWhatItCanRunAndRunsIt() async throws {
         widen()
         openPage(privately: true)
