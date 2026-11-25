@@ -8,6 +8,7 @@ import UIKit
 struct PinHold: UIViewControllerRepresentable {
     @Environment(AppModel.self) private var app
     let tab: Tab?
+    let page: Space.ID
     let content: AnyView
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -24,24 +25,26 @@ struct PinHold: UIViewControllerRepresentable {
         host.rootView = AnyView(content.environment(\.self, context.environment))
         context.coordinator.app = app
         context.coordinator.tab = tab
+        context.coordinator.page = page
         context.coordinator.environment = context.environment
     }
 
     @MainActor final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
         weak var app: AppModel?
         var tab: Tab?
+        var page: Space.ID?
         var environment = EnvironmentValues()
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                     configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
             guard let app, let tab else { return nil }
-            let environment = environment
+            let environment = environment, page = page
             return UIContextMenuConfiguration(identifier: tab.id as NSString, previewProvider: {
                 let preview = UIHostingController(rootView: TabHoldPreview(tab: tab, picture: app.pages.snapshots[tab.id], pool: app.pages)
                     .environment(\.self, environment))
                 preview.sizingOptions = .preferredContentSize
                 return preview
-            }, actionProvider: { _ in PinHold.menu(tab, app: app) })
+            }, actionProvider: { _ in PinHold.menu(tab, app: app, page: page) })
         }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
@@ -69,13 +72,13 @@ struct PinHold: UIViewControllerRepresentable {
     /// TabHold's menu for a pin: Copy Link, Duplicate Tab, Share, Open on Mac;
     /// Unpin, Move to Space, Ask About Page; Close Tab, each with the
     /// column's glyph.
-    @MainActor static func menu(_ tab: Tab, app: AppModel) -> UIMenu {
+    @MainActor static func menu(_ tab: Tab, app: AppModel, page: Space.ID?) -> UIMenu {
         let column = ColumnState.of(app)
         func item(_ title: String, _ glyph: MacGlyph, _ run: @escaping () -> Void) -> UIAction {
             UIAction(title: title, image: UIImage.menuGlyph(glyph)) { _ in run() }
         }
-        let page = TabHold.pageItems(tab, app: app).map { item($0.title, $0.glyph, $0.run) }
-        var sections = [UIMenu(options: .displayInline, children: page)]
+        let first = TabHold.pageItems(tab, app: app, page: page).map { item($0.title, $0.glyph, $0.run) }
+        var sections = [UIMenu(options: .displayInline, children: first)]
         if !tab.isPrivate {
             var own: [UIMenuElement] = []
             if !tab.isMail, let space = app.browser.space(holding: tab.id) {
@@ -90,7 +93,7 @@ struct PinHold: UIViewControllerRepresentable {
                     UIAction(title: "\(space.emoji) \(space.name)") { _ in column.move(tab.id, to: space.id) }
                 }))
             }
-            own.append(item("Ask About Page", .yabChatSpark) { TabHold.ask(tab, app: app) })
+            own.append(item("Ask About Page", .yabChatSpark) { TabHold.ask(tab, app: app, page: page) })
             sections.append(UIMenu(options: .displayInline, children: own))
         }
         sections.append(UIMenu(options: .displayInline, children: [item("Close Tab", .yabTabX) { column.close(tab.id) }]))

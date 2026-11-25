@@ -25,7 +25,7 @@ struct TabletSidebar: View {
                                 }
                                 .buttonStyle(.plain).accessibilityLabel(tab.short)
                                 .accessibilityIdentifier("tablet.pin.\(tab.id)")
-                                .modifier(TabHold(tab: tab, list: .pins))
+                                .modifier(TabHold(tab: tab, list: .pins, page: space.id))
                             }
                         }.padding(.bottom, 12)
                     }

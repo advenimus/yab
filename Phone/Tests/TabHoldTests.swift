@@ -34,8 +34,8 @@ final class TabHoldTests: XCTestCase {
         let front = Tab(id: "front", title: "Front", site: "Front", icon: "globe", url: "https://example.com/front")
         app.browser.open(front, deduplicate: false)
 
-        XCTAssertTrue(titles(PinHold.menu(held, app: app)).contains("Duplicate Tab"), "a pin's hold")
-        let items = TabHold.pageItems(held, app: app)
+        XCTAssertTrue(titles(PinHold.menu(held, app: app, page: app.browser.spaceID)).contains("Duplicate Tab"), "a pin's hold")
+        let items = TabHold.pageItems(held, app: app, page: nil)
         let duplicate = try XCTUnwrap(items.first { $0.title == "Duplicate Tab" }, "a row's hold")
         let before = app.browser.space.allTabs.count
         duplicate.run()
@@ -46,7 +46,7 @@ final class TabHoldTests: XCTestCase {
 
         let mail = Tab(id: "mail", title: "Mail", site: "Mail", icon: "mail", url: "https://mail.example.com/")
         app.browser.open(mail, deduplicate: false)
-        XCTAssertFalse(TabHold.pageItems(mail, app: app).contains { $0.title == "Duplicate Tab" }, "Mail has no page to copy")
+        XCTAssertFalse(TabHold.pageItems(mail, app: app, page: nil).contains { $0.title == "Duplicate Tab" }, "Mail has no page to copy")
     }
 
     /// With the field closed (the iPad's sidebar, or the field still on its
@@ -59,7 +59,7 @@ final class TabHoldTests: XCTestCase {
         app.field.typed("half a thought")
         app.surfaces.closeField()
 
-        let duplicate = try XCTUnwrap(TabHold.pageItems(held, app: app).first { $0.title == "Duplicate Tab" })
+        let duplicate = try XCTUnwrap(TabHold.pageItems(held, app: app, page: nil).first { $0.title == "Duplicate Tab" })
         duplicate.run()
         XCTAssertEqual(app.field.newTabWords, "half a thought", "a hold with the field closed keeps its words")
 
