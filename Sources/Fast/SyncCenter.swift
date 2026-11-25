@@ -1295,6 +1295,17 @@ final class SyncCenter: ObservableObject {
         let named = Set((living + livingFolders).compactMap { $0["folder"]?.string })
         // Nor a pair whose other tab hasn't come yet.
         let heldTabs = Set(every.map(\.id))
+        // Nor one whose tabs, as this Mac last took them in, stand in
+        // another space than it does: a split view moved a record at a
+        // time (PhoneSync.move, or a page between them) can't be drawn
+        // until its tabs and it are in one space again, and a removal
+        // here would win over the pair's own move when it came.
+        let standing = Dictionary(living.compactMap { record in record["parent"]?.string.map { (record.id, $0) } },
+                                  uniquingKeysWith: { first, _ in first })
+        func apart(_ pair: SyncKit.Record, _ ids: [String]) -> Bool {
+            let space = pair["parent"]?.string
+            return ids.allSatisfy { standing[$0] != nil } && ids.contains { standing[$0] != space }
+        }
         // Catch-up pages are ordered by sequence. A space renamed after its
         // tabs can arrive in a later page: absence from local rows is not a
         // close until this Mac has received that space. Tombstones count as
@@ -1328,6 +1339,7 @@ final class SyncCenter: ObservableObject {
         try journal.reconcile(SyncShapes.pair, out.pairs, within: { pair in
             let ids = pair.id.split(separator: "|").map(String.init)
             return !awaitingSpace(pair) && !ids.contains(where: awayIDs.contains) && ids.allSatisfy(heldTabs.contains)
+                && (!apart(pair, ids) || orphaned(pair))
         }, shown: true, orphaned: orphaned)
     }
 
