@@ -135,7 +135,7 @@ final class DownloadStoreTests: XCTestCase {
         store.seen(second)
         XCTAssertEqual(store.arrival?.seen, true)
         try finished(store, "three.pdf")
-        store.seen()
+        store.listOpened(isPrivate: false)
         XCTAssertEqual(store.arrival?.seen, true, "the list opened")
         let fourth = try finished(store, "four.pdf")
         store.delete(fourth)
@@ -151,6 +151,22 @@ final class DownloadStoreTests: XCTestCase {
         XCTAssertEqual(store.arrival?.done, false, "a failure is the last file in too")
         store.begin(broken, name: "broken.zip", host: "acme.com", total: nil, isPrivate: false, control: .init())
         XCTAssertNil(store.arrival, "tried again: not in yet")
+    }
+
+    /// A list opened shows only its own kind's files: the other kind's last
+    /// file still waits on its button.
+    func testOpeningAListSeesOnlyAFileItShows() throws {
+        let store = store()
+        try finished(store, "secret.pdf", isPrivate: true)
+        store.listOpened(isPrivate: false)
+        XCTAssertEqual(store.arrival?.seen, false, "an ordinary list doesn't show a private file")
+        store.listOpened(isPrivate: true)
+        XCTAssertEqual(store.arrival?.seen, true)
+        try finished(store, "open.pdf")
+        store.listOpened(isPrivate: true)
+        XCTAssertEqual(store.arrival?.seen, false, "a private list doesn't show an ordinary file")
+        store.listOpened(isPrivate: false)
+        XCTAssertEqual(store.arrival?.seen, true)
     }
 
     /// The Now line's two seconds are the line's: the icon the iPad keeps

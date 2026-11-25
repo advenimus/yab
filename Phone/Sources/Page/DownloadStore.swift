@@ -299,10 +299,17 @@ final class DownloadStore {
         arrival = nil
     }
 
-    /// The list opened, or the file did: the button is itself again and the
-    /// line has nothing left to say.
-    func seen(_ id: UUID? = nil) {
-        guard let arrival, !arrival.seen, id == nil || id == arrival.id else { return }
+    /// A downloads list opened, of a private page's files or an ordinary
+    /// one's: it has shown the last file in when that file is of its kind.
+    func listOpened(isPrivate: Bool) {
+        guard let arrival, entry(arrival.id)?.isPrivate == isPrivate else { return }
+        seen(arrival.id)
+    }
+
+    /// The file opened, or a list that shows it did: the button is itself
+    /// again and the line has nothing left to say.
+    func seen(_ id: UUID) {
+        guard let arrival, !arrival.seen, id == arrival.id else { return }
         lineTask?.cancel()
         Motion.nowGone.run { self.arrival?.seen = true }
     }

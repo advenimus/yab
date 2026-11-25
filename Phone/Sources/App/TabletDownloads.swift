@@ -56,7 +56,7 @@ struct TabletDownloadsButton: View {
         // Back on screen, a question still waiting opens it again, as its own.
         .onChange(of: active) { _, shown in if shown && question != nil { ask() } else { open = false } }
         .onChange(of: open) { _, shown in
-            if shown { app.downloads.seen() } else { askOpened = false }
+            if shown { app.downloads.listOpened(isPrivate: app.pageIsPrivate) } else { askOpened = false }
         }
     }
 
