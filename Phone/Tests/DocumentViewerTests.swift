@@ -6,6 +6,7 @@ import XCTest
 @MainActor
 final class DocumentViewerTests: XCTestCase {
     private var app: AppModel!
+    private var locks = false
 
     override func setUp() {
         let tab = { (id: String) in Tab(id: id, title: id, site: id, icon: "globe", url: "about:blank") }
@@ -15,7 +16,8 @@ final class DocumentViewerTests: XCTestCase {
             Space(id: "private", name: "Private", emoji: "", tint: RGB(31, 31, 34),
                   today: [tab("secret"), tab("secret.other")], current: "secret", isPrivate: true)
         ], mac: World.Mac(joined: false))
-        app = AppModel(world: world, fixturesEnabled: false, privateLockEnabled: { false })
+        locks = false
+        app = AppModel(world: world, fixturesEnabled: false, privateLockEnabled: { [unowned self] in self.locks })
     }
 
     override func tearDown() { app = nil }
@@ -41,6 +43,19 @@ final class DocumentViewerTests: XCTestCase {
         XCTAssertFalse(app.showsDocument(file(isPrivate: true), for: "secret", appActive: true))
         XCTAssertFalse(app.showsDocument(file(isPrivate: true), for: "page", appActive: true),
                        "a private file never shows over a public page, whatever tab it names")
+    }
+
+    /// Private locked over its own tab (Yab left and back with Open with
+    /// Face ID): the tab and the privacy match, and still nothing opens.
+    func testAPrivateDocumentNeverOpensOverTheLock() {
+        app.browser.select("secret")
+        XCTAssertTrue(app.showsDocument(file(isPrivate: true), for: "secret", appActive: true))
+        locks = true
+        app.privateLock.didEnterBackground()
+        app.privateLock.didBecomeActive()
+        XCTAssertEqual(app.browser.tab?.id, "secret")
+        XCTAssertFalse(app.privateLock.mayReveal)
+        XCTAssertFalse(app.showsDocument(file(isPrivate: true), for: "secret", appActive: true))
     }
 
     func testNothingOpensWhileTheAppIsAway() {

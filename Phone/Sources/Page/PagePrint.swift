@@ -37,8 +37,12 @@ extension AppModel {
     /// (Save to Files and the rest), named for the page.
     func savePageAsPDF() {
         guard let tab = browser.tab, let view = pages.liveView(tab.id) else { return }
+        let isPrivate = pageIsPrivate
         view.createPDF { [weak self] result in
-            guard let self else { return }
+            // Made while the person may have left the page, Yab or Private:
+            // then nothing of it is shown, or kept.
+            guard let self, self.presents(for: tab.id, isPrivate: isPrivate,
+                                          appActive: UIApplication.shared.applicationState == .active) else { return }
             switch result {
             case let .success(data):
                 let folder = FileManager.default.temporaryDirectory.appendingPathComponent("yab-pdf-\(UUID())", isDirectory: true)

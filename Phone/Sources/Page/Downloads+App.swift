@@ -34,10 +34,18 @@ extension AppModel {
     }
 
     /// The viewer opens only over the tab the file is for (WebPool names the
-    /// opener for a window that was only the file), in front, in use, and of
-    /// the page's own privacy. Otherwise the file just lands in Downloads.
+    /// opener for a window that was only the file), when it may present
+    /// there. Otherwise the file just lands in Downloads.
     func showsDocument(_ file: DownloadEntry, for tab: Tab.ID, appActive: Bool) -> Bool {
-        appActive && browser.tab?.id == tab && file.isPrivate == pageIsPrivate
+        presents(for: tab, isPrivate: file.isPrivate, appActive: appActive)
+    }
+
+    /// Something made for a tab after a wait (a document it opened, its page
+    /// as a PDF) shows only over that tab, in front of an active Yab and of
+    /// the page's own privacy, and a private one only while Private may be
+    /// seen: by then the person may have moved on, left Yab or locked Private.
+    func presents(for tab: Tab.ID, isPrivate: Bool, appActive: Bool) -> Bool {
+        appActive && browser.tab?.id == tab && isPrivate == pageIsPrivate && (!isPrivate || privateLock.mayReveal)
     }
 
     /// An allowed site doesn't ask, one told no doesn't send. A private tab

@@ -431,7 +431,7 @@ final class PageDownloadTests: XCTestCase {
 
     /// The app over the pool, as it runs: a public page and another in a
     /// public space, a private one in Private. The viewer's open is seen.
-    private func documentApp() -> (AppModel, viewed: () -> [Tab.ID]) {
+    private func documentApp(locks: @escaping @MainActor () -> Bool = { false }) -> (AppModel, viewed: () -> [Tab.ID]) {
         let page = { (id: String, isPrivate: Bool) in
             YabPhone.Tab(id: id, title: id, site: "127.0.0.1", icon: "globe", url: self.site.url("/page").absoluteString, isPrivate: isPrivate)
         }
@@ -442,7 +442,7 @@ final class PageDownloadTests: XCTestCase {
                   today: [page("viewer.secret", true)], current: "viewer.secret", isPrivate: true)
         ], mac: World.Mac(joined: false))
         // Its files in a folder of the test's own, not the app's Downloads.
-        let app = AppModel(world: world, fixturesEnabled: false, privateLockEnabled: { false }, downloads: .temporary())
+        let app = AppModel(world: world, fixturesEnabled: false, privateLockEnabled: locks, downloads: .temporary())
         pages = app.pages
         ids += ["viewer.page", "viewer.other", "viewer.secret"]
         var viewed: [Tab.ID] = []
@@ -477,6 +477,66 @@ final class PageDownloadTests: XCTestCase {
         XCTAssertEqual(app.browser.tab?.id, "viewer.other")
         XCTAssertNil(window.rootViewController?.presentedViewController, "no viewer over the public page")
         XCTAssertEqual(app.downloads.arrival?.seen, false, "the file waits in Downloads, not opened")
+    }
+
+    /// Yab left and back with Open with Face ID while a private PDF comes:
+    /// Private is locked over the same tab, and the viewer never opens over the lock.
+    func testAPrivatePDFWholeWhilePrivateIsLockedLandsWithoutOpening() async throws {
+        var locks = false
+        let (app, viewed) = documentApp(locks: { locks })
+        let secret = try XCTUnwrap(app.browser.tab("viewer.secret"))
+        app.browser.select(secret.id)
+        let view = try await ready(secret)
+        site.holdFiles()
+        try await click(view, "pdf")
+        _ = try await started()
+        locks = true
+        app.privateLock.didEnterBackground()
+        app.privateLock.didBecomeActive()
+        XCTAssertFalse(app.privateLock.mayReveal)
+        XCTAssertEqual(app.browser.tab?.id, secret.id)
+        site.releaseFiles()
+        let file = try await completed()
+        XCTAssertTrue(file.isPrivate)
+        try await require { viewed() == [secret.id] }
+        XCTAssertNil(window.rootViewController?.presentedViewController, "no viewer over the lock")
+        XCTAssertEqual(app.downloads.arrival?.seen, false, "the file waits in Downloads, not opened")
+    }
+
+    /// Yab's folders of Save as PDF in the temporary folder.
+    private func pdfFolders() -> Set<String> {
+        Set((try? FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path))?.filter { $0.hasPrefix("yab-pdf-") } ?? [])
+    }
+
+    /// Save as PDF on a private page, then Private left, or locked, before
+    /// the PDF is made: nothing shows over what is in front, and no file stays.
+    func testAPrivatePagesPDFMadeAfterPrivateIsLeftOrLockedIsDropped() async throws {
+        for leaving in ["left", "locked"] {
+            var locks = false
+            let (app, _) = documentApp(locks: { locks })
+            let secret = try XCTUnwrap(app.browser.tab("viewer.secret"))
+            app.browser.select(secret.id)
+            let view = try await ready(secret)
+            XCTAssertTrue(app.pageIsPrivate)
+            let before = pdfFolders()
+            app.savePageAsPDF()
+            if leaving == "left" {
+                app.browser.select("viewer.other")
+                XCTAssertFalse(app.pageIsPrivate)
+            } else {
+                locks = true
+                app.privateLock.didEnterBackground()
+                app.privateLock.didBecomeActive()
+                XCTAssertFalse(app.privateLock.mayReveal)
+            }
+            // WebKit makes a view's PDFs in turn: the app's is made by now.
+            _ = try await view.pdf()
+            await Task.yield()
+            XCTAssertNil(window.rootViewController?.presentedViewController, "\(leaving): no share sheet of the private page")
+            XCTAssertEqual(pdfFolders(), before, "\(leaving): no file of it")
+            XCTAssertNotEqual(app.surfaces.toast?.text, "Couldn’t save this page", leaving)
+            window.rootViewController?.dismiss(animated: false)
+        }
     }
 
     /// A PDF whose tab was closed before it was whole only lands in
