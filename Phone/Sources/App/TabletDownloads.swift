@@ -11,6 +11,8 @@ struct TabletDownloadsButton: View {
     let active: Bool
     let id: String
     @State private var open = false
+    /// The popover is open because a question opened it.
+    @State private var askOpened = false
 
     private var question: DownloadAsk? { app.downloads.asking(isPrivate: app.pageIsPrivate) }
     /// What the list holds, for VoiceOver: "2 files".
@@ -40,9 +42,20 @@ struct TabletDownloadsButton: View {
         .popover(isPresented: Binding(get: { active && open }, set: { open = $0 }), arrowEdge: .bottom) {
             TabletDownloadsPanel().environment(app).presentationCompactAdaptation(.popover)
         }
-        // A site's first file asks at once, from wherever the button is.
-        .onChange(of: question?.id, initial: true) { _, id in if id != nil { open = true } }
+        // A site's first file asks at once, from wherever the button is. A
+        // popover the question opened goes with its answer, as the phone's
+        // card does; one the person opened stays.
+        .onChange(of: question?.id, initial: true) { old, id in
+            if id != nil {
+                if !open { askOpened = true }
+                open = true
+            } else if old != nil, askOpened {
+                askOpened = false
+                open = false
+            }
+        }
         .onChange(of: active) { _, shown in open = shown && question != nil }
+        .onChange(of: open) { _, shown in if !shown { askOpened = false } }
     }
 }
 

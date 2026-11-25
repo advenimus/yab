@@ -48,7 +48,13 @@ final class DownloadsUITests: XCTestCase {
     private func closePopover() {
         let ground = app.otherElements["PopoverDismissRegion"]
         if ground.exists { ground.tap() }
-        // Until the ground has gone too, a tap is still the popover's.
+        popoverGone()
+    }
+
+    /// Until a popover's ground has gone too, a tap on the page is still
+    /// the popover's: the iPad's question goes as it is answered.
+    private func popoverGone() {
+        let ground = app.otherElements["PopoverDismissRegion"]
         XCTAssertTrue(wait { !self.app.popovers.firstMatch.exists && !ground.exists }, "the popover stayed")
     }
 
@@ -81,6 +87,7 @@ final class DownloadsUITests: XCTestCase {
         // Cancel asks again next time.
         app.buttons["download.ask.cancel"].tap()
         XCTAssertTrue(wait { !self.any("download.ask").exists })
+        popoverGone()
         app.webViews.firstMatch.links["Report"].tap()
         XCTAssertTrue(any("download.ask").waitForExistence(timeout: 20))
         app.buttons["download.ask.download"].tap()
