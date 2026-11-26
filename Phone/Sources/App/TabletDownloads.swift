@@ -47,15 +47,21 @@ struct TabletDownloadsButton: View {
         // card does; one the person opened stays.
         .onChange(of: question?.id, initial: true) { old, id in
             if id != nil {
-                if !open { askOpened = true }
-                open = true
+                ask()
             } else if old != nil, askOpened {
                 askOpened = false
                 open = false
             }
         }
-        .onChange(of: active) { _, shown in open = shown && question != nil }
+        // Back on screen, a question still waiting opens it again, as its own.
+        .onChange(of: active) { _, shown in if shown && question != nil { ask() } else { open = false } }
         .onChange(of: open) { _, shown in if !shown { askOpened = false } }
+    }
+
+    /// Opens the popover for the question: the question's, unless it was open already.
+    private func ask() {
+        if !open { askOpened = true }
+        open = true
     }
 }
 
