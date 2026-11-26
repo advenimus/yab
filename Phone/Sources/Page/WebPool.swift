@@ -83,6 +83,9 @@ final class WebPool: NSObject {
     var documentTypes: [Tab.ID: String] = [:]
     /// The types of the file pages in each tab's history, by address (commitDocumentType).
     var historyTypes: [Tab.ID: [URL: String]] = [:]
+    /// The method of the main frame's last request WebKit let go, until
+    /// its load commits: only a GET's page can be asked again for Download.
+    var requestMethods: [Tab.ID: String] = [:]
     var downloadConversions: [Tab.ID: DownloadConversion] = [:]
     /// Tabs whose main frame was just sent on to an app's link and refused.
     private var appLinks: Set<Tab.ID> = []
@@ -1039,7 +1042,7 @@ final class WebPool: NSObject {
         downloadOrigins[id] = nil; downloadConversions[id] = nil
         if javaScriptDialog?.tab == id || httpAuthentication?.tab == id { suspendPageDialogs() }
         activeNavigations[id] = nil; documents[id] = nil; committedURLs[id] = nil; loadFailures[id] = nil
-        respondedTypes[id] = nil; documentTypes[id] = nil; historyTypes[id] = nil
+        respondedTypes[id] = nil; documentTypes[id] = nil; historyTypes[id] = nil; requestMethods[id] = nil
         provisional.remove(id)
         endRefresh(id, in: view)
         view.scrollView.refreshControl?.removeTarget(self, action: #selector(pulledToRefresh(_:)), for: .valueChanged)
@@ -2149,6 +2152,7 @@ extension WebPool: WKNavigationDelegate {
         if let id, mainFrame {
             appLinks.remove(id)
             actionTypes[id] = action.navigationType
+            requestMethods[id] = (action.request.httpMethod ?? "GET").uppercased()
             requestedURLs[id] = url.absoluteString
         }
         return .allow

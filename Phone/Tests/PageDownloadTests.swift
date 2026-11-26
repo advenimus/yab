@@ -483,6 +483,47 @@ final class PageDownloadTests: XCTestCase {
         }
     }
 
+    /// A text page a form's POST answered offers no Download: asking its
+    /// address again is a GET, with another answer than the one on screen.
+    /// The same address asked for with a GET still offers it, and keeps
+    /// that answer, and so does an ordinary file page after it. Back to the
+    /// POST's page, from WebKit's cache or sent again, it still offers none.
+    func testAPostedTextPageOffersNoDownloadButAFetchedOneKeepsItsOwnAnswer() async throws {
+        let source = tab("download.document.posted"), view = try await ready(source)
+        let answer = site.url("/answer.txt")
+        let shown = { () async throws -> String in
+            let text: Any = try await view.evaluateJavaScript("document.body.textContent")
+            return (text as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        pages.load(source.id, answer)
+        try await require { view.url == answer && !view.isLoading && self.pages.state(for: source.id).downloadable }
+        let first = try await shown(); XCTAssertEqual(first, "Fetched answer B")
+        pages.downloadDocument(of: source.id)
+        let fetched = try await completed()
+        XCTAssertEqual(try bytes(fetched), DownloadSite.fetched, "a GET's page keeps the GET's answer")
+        store.delete(fetched.id)
+
+        view.goBack()
+        try await require { view.url == self.site.url("/page") && !view.isLoading && self.pages.painted.contains(source.id) }
+        let _: Any = try await view.evaluateJavaScript("document.getElementById('post').submit(); true")
+        try await require { view.url == answer && !view.isLoading && self.pages.painted.contains(source.id) }
+        let posted = try await shown(); XCTAssertEqual(posted, "Posted answer A")
+        XCTAssertEqual(site.requests.last?.header.hasPrefix("POST /answer.txt"), true)
+        XCTAssertFalse(pages.state(for: source.id).downloadable, "a POST's page has no Download")
+        let asked = site.requests.count
+        pages.downloadDocument(of: source.id)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(site.requests.count, asked, "nothing is asked again")
+        XCTAssertTrue(pages.transfers.isEmpty && store.entries.isEmpty, "nothing is kept")
+
+        pages.load(source.id, site.url("/note.txt"))
+        try await require { view.url == self.site.url("/note.txt") && !view.isLoading && self.pages.state(for: source.id).downloadable }
+        view.goBack()
+        try await require { view.url == answer && !view.isLoading && self.pages.painted.contains(source.id) }
+        let back = try await shown(); XCTAssertEqual(back, "Posted answer A")
+        XCTAssertFalse(pages.state(for: source.id).downloadable, "back on the POST's page, still no Download")
+    }
+
     /// A page that is a page, not a file, offers no Download, and asking
     /// anyway fetches nothing.
     func testAnHTMLPageOffersNoDownload() async throws {
@@ -988,6 +1029,8 @@ private final class DownloadSite: @unchecked Sendable {
     /// An MP4's first box alone: WebKit's player takes the page, with nothing to play.
     static let mp4 = Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6F, 0x6D,
                            0x00, 0x00, 0x02, 0x00, 0x69, 0x73, 0x6F, 0x6D, 0x6D, 0x70, 0x34, 0x31])
+    /// One address, two answers: what a form's POST gets, and what a GET gets.
+    static let posted = Data("Posted answer A\n".utf8), fetched = Data("Fetched answer B\n".utf8)
     static let documents = ["/pic.png": ("image/png", png), "/clip.mp3": ("audio/mpeg", mp3), "/clip.mp4": ("video/mp4", mp4),
                             "/note.txt": ("text/plain; charset=utf-8", note)]
     private let listener: NWListener
@@ -1045,6 +1088,12 @@ private final class DownloadSite: @unchecked Sendable {
             }
             let target = header.components(separatedBy: " ").dropFirst().first ?? "/"
             self.received.append(Request(target: target, header: header))
+            if target == "/answer.txt" {
+                let body = header.hasPrefix("POST ") ? Self.posted : Self.fetched
+                let headers = Data("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
+                self.send(headers + body, connection)
+                return
+            }
             if let (type, body) = Self.documents[target] {
                 let headers = Data("HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
                 self.send(headers + body, connection)
@@ -1068,7 +1117,7 @@ private final class DownloadSite: @unchecked Sendable {
                 } else { self.send(headers + (self.fails ? Data(body.prefix(2)) : body), connection) }
                 return
             }
-            let body = "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><link rel=icon href=data:,><title>Owned download source</title><style>body{font:20px system-ui;padding:70px 20px;background:#ddf4ff}a,button{display:block;padding:16px;margin:16px 0}</style><h1 id=part>Owned actual source</h1><a id=fragment href=#part>Actual fragment</a><a id=file href=/file>Download actual file</a><a id=pdf href=/doc.pdf>Actual PDF</a><a id=pdfwindow href=/doc.pdf target=_blank>Actual PDF window</a><button id=touch onclick=\"window.actions=(window.actions||0)+1;document.getElementById('result').textContent='Page action '+window.actions\">Page action</button><output id=result>Ready</output>"
+            let body = "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'><link rel=icon href=data:,><title>Owned download source</title><style>body{font:20px system-ui;padding:70px 20px;background:#ddf4ff}a,button{display:block;padding:16px;margin:16px 0}</style><h1 id=part>Owned actual source</h1><a id=fragment href=#part>Actual fragment</a><a id=file href=/file>Download actual file</a><a id=pdf href=/doc.pdf>Actual PDF</a><a id=pdfwindow href=/doc.pdf target=_blank>Actual PDF window</a><button id=touch onclick=\"window.actions=(window.actions||0)+1;document.getElementById('result').textContent='Page action '+window.actions\">Page action</button><output id=result>Ready</output><form id=post method=post action=/answer.txt><input type=hidden name=q value=1></form>"
             let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
             self.send(Data(response.utf8), connection)
         }

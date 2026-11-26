@@ -180,8 +180,11 @@ extension WebPool {
     /// A commit names its page's type from the response for that very
     /// address. A page back from WebKit's back-forward cache brings none:
     /// its type is the one its address had in the tab's history.
+    /// A page a POST answered is no file Download can ask for again: a GET
+    /// to its address can answer with something else.
     func commitDocumentType(_ id: Tab.ID, at url: URL?, in view: WKWebView) {
         let responded = respondedTypes.removeValue(forKey: id)
+        let fetched = requestMethods.removeValue(forKey: id) == "GET"
         var known = historyTypes[id] ?? [:]
         if let url, let responded, responded.url == url { known[url] = responded.type }
         // Only what the tab's history still holds.
@@ -189,11 +192,11 @@ extension WebPool {
         let held = Set(([list.currentItem].compactMap { $0 } + list.backList + list.forwardList).map(\.url) + [url].compactMap { $0 })
         known = known.filter { held.contains($0.key) }
         historyTypes[id] = known.isEmpty ? nil : known
-        documentTypes[id] = url.flatMap { known[$0] }
+        documentTypes[id] = fetched ? url.flatMap { known[$0] } : nil
     }
 
     /// The page is a file WebKit shows, at an address Download can ask again:
-    /// a blob: or data: document is out of its reach.
+    /// a blob: or data: document is out of its reach, and so is a POST's answer.
     func documentDownloadable(_ id: Tab.ID) -> Bool {
         PageDocument.offersDownload(documentTypes[id]) && committedURLs[id].map(allowsDownloadOf) == true
     }
