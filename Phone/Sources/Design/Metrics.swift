@@ -744,6 +744,9 @@ extension Metrics.Tablet {
     /// The Mac's sidebar header (Metrics.strip) and its doors (SideBar).
     static let header: CGFloat = 52
     static let door: CGFloat = 36
+    /// The downloads button keeps the phone's touch target among the doors:
+    /// the band and the sidebar's foot charge it this width.
+    static let downloadsDoor: CGFloat = Metrics.touch
     static let doorRadius: CGFloat = 10
     /// The Mac's address plate in the sidebar (SiteControls).
     static let plate: CGFloat = 36
@@ -752,7 +755,7 @@ extension Metrics.Tablet {
     /// The band's address, as the Mac's toolbar writes it.
     static let bandAddressFont: CGFloat = 13
     /// The band's doors by kind: Back, Forward and Reload; New Tab and All
-    /// Tabs (downloads beside them when shown); Site Controls.
+    /// Tabs (downloads, its own width, beside them when shown); Site Controls.
     static let bandNavigationDoors = 3
     static let bandTabButtonDoors = 2
     static let bandSiteControlsDoors = 1

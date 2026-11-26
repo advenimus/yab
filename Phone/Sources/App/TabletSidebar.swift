@@ -224,6 +224,12 @@ struct TabletSidebar: View {
 
     // MARK: - the foot
 
+    /// What the foot's spaces leave its two buttons, their gaps and its insets.
+    private var footEnds: CGFloat {
+        typealias M = Metrics.Tablet
+        return M.downloadsDoor + M.door + 2 * M.footGap + 2 * M.footInset
+    }
+
     /// The Mac's foot: downloads, the spaces in the middle (the one in front
     /// in its color, the rest dimmed), and +.
     private var footer: some View {
@@ -234,7 +240,7 @@ struct TabletSidebar: View {
                     HStack(spacing: Metrics.Tablet.footGap) {
                         ForEach(app.browser.spaces.filter { !$0.isPrivate }) { item in spaceButton(item).id(item.id) }
                     }
-                    .frame(minWidth: max(0, width - 2 * (Metrics.touch + 2) - 12))
+                    .frame(minWidth: max(0, width - footEnds))
                 }
                 .scrollIndicators(.hidden)
                 .onChange(of: space.id, initial: true) { _, id in Motion.space.run { scroll.scrollTo(id, anchor: .center) } }

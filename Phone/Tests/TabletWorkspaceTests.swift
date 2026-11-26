@@ -88,13 +88,43 @@ final class TabletWorkspaceTests: XCTestCase {
         XCTAssertEqual(medium.workspace, .doors)
         XCTAssertFalse(medium.centered)
         XCTAssertEqual(medium.leadingWidth, 108)
-        XCTAssertEqual(medium.trailingWidth, 216)
+        XCTAssertEqual(medium.trailingWidth, 224, "four doors and the 44-point downloads")
         let single = TabletChromePlan(strip: false, sidebarInView: false, addressBars: false)
         let wide = TabletBandPlan(chrome: single, width: 1000, first: true, last: true, focused: true, downloads: true)
         XCTAssertTrue(wide.centered)
         XCTAssertEqual(wide.workspace, .doors)
-        XCTAssertEqual(wide.leadingWidth, 144)
-        XCTAssertEqual(wide.trailingWidth, 144)
+        XCTAssertEqual(wide.leadingWidth, 152, "centered on the trailing end's width")
+        XCTAssertEqual(wide.trailingWidth, 152)
+    }
+
+    /// Downloads is a 44-point button among 36-point doors: the band
+    /// charges its own width when it chooses doors or the menu and when it
+    /// sizes the trailing end, so the doors never take the address's room.
+    /// The focused trailing pane of a split, sidebar away: Back, Forward and
+    /// Reload lead (108); Site Controls, the split menu, Close Split, + and
+    /// All Tabs trail (180), with downloads 224; the address keeps 96 and
+    /// the band 4 at each end.
+    func testBandChargesDownloadsItsOwnWidth() {
+        let away = TabletChromePlan(strip: false, sidebarInView: false, addressBars: false, split: true)
+        func pane(_ width: CGFloat, _ downloads: Bool) -> TabletBandPlan {
+            TabletBandPlan(chrome: away, width: width, first: false, last: true, focused: true, downloads: downloads)
+        }
+        for (downloads, threshold, trailing) in [(true, CGFloat(436), CGFloat(224)), (false, 392, 180)] {
+            let below = pane(threshold - 1, downloads)
+            XCTAssertEqual(below.workspace, .menu, "\(threshold - 1) points, downloads \(downloads)")
+            XCTAssertGreaterThanOrEqual(below.address, Metrics.Tablet.bandAddressMinimum)
+            for width in [threshold, threshold + 1] {
+                let band = pane(width, downloads)
+                XCTAssertEqual(band.workspace, .doors, "\(width) points, downloads \(downloads)")
+                XCTAssertTrue(band.close)
+                XCTAssertEqual(band.leadingWidth, 108)
+                XCTAssertEqual(band.trailingWidth, trailing, "\(width) points, downloads \(downloads)")
+                XCTAssertEqual(band.address, width - 8 - 108 - trailing)
+                XCTAssertGreaterThanOrEqual(band.address, Metrics.Tablet.bandAddressMinimum)
+            }
+        }
+        XCTAssertEqual(pane(428, true).workspace, .menu, "224 points of doors leave a 428-point pane too little address")
+        XCTAssertEqual(pane(428, false).workspace, .doors)
     }
 
     /// No tab in the space, the sidebar away: the page area still gets a band

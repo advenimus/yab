@@ -54,20 +54,22 @@ struct TabletBandPlan: Equatable {
     /// `first` and `last` place the pane at the window's leading and trailing
     /// edges: the sidebar's door stands on the first, the tab buttons on the last.
     init(chrome: TabletChromePlan, width: CGFloat, first: Bool, last: Bool, focused: Bool, downloads: Bool, page: Bool = true) {
-        let door = Metrics.Tablet.door
-        let room = width - Metrics.Tablet.bandInset * 2
-        let minimum = Metrics.Tablet.bandAddressMinimum
+        typealias M = Metrics.Tablet
+        let door = M.door
+        let room = width - M.bandInset * 2
+        let minimum = M.bandAddressMinimum
         sidebarDoor = chrome.bandWorkspace && first
         navigation = chrome.bandNav && page
         siteControls = focused && page
         splitMenu = chrome.split && focused && page
         let tabButtons = chrome.bandWorkspace && last
-        typealias M = Metrics.Tablet
-        let leading = (sidebarDoor ? 1 : 0) + (navigation ? M.bandNavigationDoors : 0)
-        let fixed = (siteControls ? M.bandSiteControlsDoors : 0) + (splitMenu ? 1 : 0)
-        let spread = fixed + (chrome.split ? 1 : 0) + (tabButtons ? M.bandTabButtonDoors + (downloads ? 1 : 0) : 0)
-        let fits = door * CGFloat(leading + spread) + minimum <= room
-        let trailing: Int
+        func doors(_ count: Int) -> CGFloat { door * CGFloat(count) }
+        let leading = doors((sidebarDoor ? 1 : 0) + (navigation ? M.bandNavigationDoors : 0))
+        let fixed = doors((siteControls ? M.bandSiteControlsDoors : 0) + (splitMenu ? 1 : 0))
+        let tabDoors = doors(M.bandTabButtonDoors) + (downloads ? M.downloadsDoor : 0)
+        let spread = fixed + doors(chrome.split ? 1 : 0) + (tabButtons ? tabDoors : 0)
+        let fits = leading + spread + minimum <= room
+        let trailing: CGFloat
         if fits || !tabButtons && !splitMenu {
             close = chrome.split
             workspace = tabButtons ? .doors : .none
@@ -75,11 +77,12 @@ struct TabletBandPlan: Equatable {
         } else {
             close = chrome.split && !splitMenu
             workspace = tabButtons ? .menu : .none
-            trailing = fixed + (close ? 1 : 0) + (tabButtons ? 1 : 0)
+            trailing = fixed + doors((close ? 1 : 0) + (tabButtons ? 1 : 0))
         }
-        centered = door * CGFloat(max(leading, trailing)) * 2 + minimum <= room
-        leadingWidth = door * CGFloat(centered ? max(leading, trailing) : leading)
-        trailingWidth = door * CGFloat(centered ? max(leading, trailing) : trailing)
+        let end = max(leading, trailing)
+        centered = end * 2 + minimum <= room
+        leadingWidth = centered ? end : leading
+        trailingWidth = centered ? end : trailing
         address = max(0, room - leadingWidth - trailingWidth)
     }
 }

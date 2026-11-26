@@ -41,7 +41,7 @@ struct TabletDownloadsButton: View {
                 }
                 if !running.isEmpty { ring(DownloadWords.overall(running)) }
             }
-            .frame(width: Metrics.touch, height: Metrics.touch)
+            .frame(width: M.downloadsDoor, height: M.downloadsDoor)
             .overlay(alignment: .topTrailing) {
                 if question != nil {
                     Circle().fill(Ink.unread)
