@@ -861,18 +861,19 @@ public nonisolated final class PhoneSync: @unchecked Sendable {
         fields["parent"] = .string(target)
         fields["order"] = Value(tab.order)
         try write(SyncCollection.tab, id, fields)
-        let pairs = target == from ? [] : try carryPairs(of: id, from: from, to: target)
+        let pairs = target == from ? [] : try carryPairs(of: id, to: target)
         emit(.local, [.tab(tab)] + pairs)
         return tab
     }
 
     /// A Mac's split view is a pair under its tabs' space. Once both of its
-    /// tabs are in the new space it goes there too: left under the old one,
-    /// no row shows it and that space's delete takes it with it.
-    private func carryPairs(of id: String, from old: String, to target: String) throws -> [SyncChange] {
+    /// tabs are in the new space it goes there too, whichever spaces they
+    /// came through: left under another, no row shows it and that space's
+    /// delete takes it with it.
+    private func carryPairs(of id: String, to target: String) throws -> [SyncChange] {
         var changes: [SyncChange] = []
         for record in journal.living(SyncCollection.pair) {
-            guard var pair = SyncPair(record), pair.space == old, pair.first == id || pair.second == id,
+            guard var pair = SyncPair(record), pair.space != target, pair.first == id || pair.second == id,
                   tab(pair.first == id ? pair.second : pair.first)?.space == target else { continue }
             try write(SyncCollection.pair, record.id, ["parent": .string(target)])
             pair.space = target
